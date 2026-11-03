@@ -18,7 +18,7 @@ Build a Discord message with every PR I opened today in the swarms repo and the 
 1. Fetch and format today's PRs. "Today" starts at local midnight, not UTC midnight. This includes PRs that were already merged or closed.
 
    ```bash
-   since=$(date +%Y-%m-%dT00:00:00%:z)
+   since="$(date +%Y-%m-%d)T00:00:00$(date +%z | sed 's/\(..\)$/:\1/')"
    for r in "kyegomez/swarms|**Swarms**" "The-Swarm-Corporation/swarms-framework-docs|**Swarms docs**"; do
      out=$(gh search prs --author=@me --repo "${r%%|*}" --created=">=$since" --limit 100 --json title,url,createdAt \
        --jq 'sort_by(.createdAt) | .[] | "- " + (.title | gsub("(?<c>[_*~`|])"; "\\" + .c)) + " - <" + .url + ">"')
