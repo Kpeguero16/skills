@@ -15,19 +15,22 @@ Build a Discord message with every PR I opened today in the swarms repo and the 
 
 ## Process
 
-1. Fetch and format today's PRs. "Today" starts at local midnight, not UTC midnight. This includes PRs that were already merged or closed.
+1. Fetch and format today's PRs. "Today" runs from local midnight to local midnight, not UTC. This includes PRs that were already merged or closed.
 
    ```bash
-   since=$(date +%Y-%m-%dT00:00:00%:z)
+   day=$(date +%F)  # or the user's date: `date -v-1d +%F` for yesterday, or YYYY-MM-DD as given
+   # each end gets its own UTC offset, so days when DST starts or ends are covered too
+   iso() { date -j -f '%Y-%m-%d %H:%M:%S' "$day $1" +%Y-%m-%dT%H:%M:%S%z | sed 's/\(..\)$/:\1/'; }
+   range="$(iso 00:00:00)..$(iso 23:59:59)"
    for r in "kyegomez/swarms|**Swarms**" "The-Swarm-Corporation/swarms-framework-docs|**Swarms docs**"; do
-     out=$(gh search prs --author=@me --repo "${r%%|*}" --created=">=$since" --limit 100 --json title,url,createdAt \
-       --jq 'sort_by(.createdAt) | .[] | "- " + (.title | gsub("(?<c>[_*~`|])"; "\\" + .c)) + " - <" + .url + ">"')
+     out=$(gh search prs --author=@me --repo "${r%%|*}" --created="$range" --limit 100 --json title,url,createdAt \
+       --jq 'sort_by(.createdAt) | .[] | "- " + (.title | gsub("(?<c>[_*~`|])"; "\\" + .c)) + " - <" + .url + ">"') || echo "SEARCH FAILED: ${r%%|*}" >&2
      [ -n "$out" ] && printf '%s\n%s\n\n' "${r#*|}" "$out"
    done > /tmp/swarms-prs.txt
    wc -m < /tmp/swarms-prs.txt
    ```
 
-   If the user passes a date (e.g. `yesterday`, `2026-11-02`), replace the `--created` value with a range from that day's local midnight to the next: `--created="2026-11-02T00:00:00-05:00..2026-11-03T00:00:00-05:00"`.
+   A `SEARCH FAILED` line means the list is incomplete: rerun before going on.
 
 2. Check the length. Discord rejects messages of 2,000 characters or more. If the count is under 2,000, go to step 4.
 
