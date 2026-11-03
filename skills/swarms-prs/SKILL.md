@@ -24,11 +24,13 @@ Build a Discord message with every PR I opened today in the swarms repo and the 
    range="$(iso 00:00:00)..$(iso 23:59:59)"
    for r in "kyegomez/swarms|**Swarms**" "The-Swarm-Corporation/swarms-framework-docs|**Swarms docs**"; do
      out=$(gh search prs --author=@me --repo "${r%%|*}" --created="$range" --limit 100 --json title,url,createdAt \
-       --jq 'sort_by(.createdAt) | .[] | "- " + (.title | gsub("(?<c>[_*~`|])"; "\\" + .c)) + " - <" + .url + ">"')
+       --jq 'sort_by(.createdAt) | .[] | "- " + (.title | gsub("(?<c>[_*~`|])"; "\\" + .c)) + " - <" + .url + ">"') || echo "SEARCH FAILED: ${r%%|*}" >&2
      [ -n "$out" ] && printf '%s\n%s\n\n' "${r#*|}" "$out"
    done > /tmp/swarms-prs.txt
    wc -m < /tmp/swarms-prs.txt
    ```
+
+   A `SEARCH FAILED` line means the list is incomplete: rerun before going on.
 
 2. Check the length. Discord rejects messages of 2,000 characters or more. If the count is under 2,000, go to step 4.
 

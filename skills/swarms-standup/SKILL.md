@@ -1,6 +1,6 @@
 ---
 name: swarms-standup
-description: Build my standup notes: every PR I opened today in swarms and swarms docs, each explained and defended by a fresh agent with proof.
+description: "Build my standup notes: every PR I opened today in swarms and swarms docs, each explained and defended by a fresh agent with proof."
 disable-model-invocation: true
 ---
 
