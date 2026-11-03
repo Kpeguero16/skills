@@ -1,5 +1,6 @@
 # skills
-Collection of skills to build fast MVP in a hackathon environment. The goal is to go from idea to MVP within 24-36 of development.
+
+The agent skills I use in my day-to-day work. I run them in T3 Code with Claude Code and Codex. The `swarms-*` skills cover my work on the swarms and swarms docs repos, and `unslop` removes AI tells from what my agents write.
 
 ## Install
 
