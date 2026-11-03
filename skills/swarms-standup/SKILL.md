@@ -40,7 +40,7 @@ For every PR I opened today in the swarms and swarms docs repos, give its status
 
 3. **Dispatch.** Launch one fresh `general-purpose` agent per PR with the brief below, all in a single message so they run in parallel, and wait for every one. Merged and closed PRs get an agent too. A dozen PRs take about 10 minutes.
 
-4. **Assemble.** Sort each repo's PRs by `createdAt` and fill the format below. From the facts JSON: the size line, and the status of a merged or closed PR, dated in local time (`jq -r '.mergedAt | fromdate | localtime | strftime("%Y-%m-%d")'`), with the reason for a close taken from the agent. Everything else comes from the agent's reply. Agents run long, so cut every answer to its main point, at most 2 lines (3 when the defense needs its proof). Output the result in a fenced code block so it copies verbatim. Below it, list **Heads-up** items: each agent's `Notes`, plus anything left unproven and why.
+4. **Assemble.** Sort each repo's PRs by `createdAt` and fill the format below. From the facts JSON: the size line, and the status of a merged or closed PR, dated in local time (`jq -r '.mergedAt | fromdate | localtime | strftime("%Y-%m-%d")'`), with the reason for a close taken from the agent. Everything else comes from the agent's reply. Agents run long, so cut every answer to its main point, at most 2 lines (3 when the defense needs its proof). Output the result in a fenced code block so it copies verbatim. Below it, list **Heads-up** items: each agent's `Notes`, plus anything left unproven and why. Follow the rules in `${CLAUDE_SKILL_DIR}/../unslop/SKILL.md` (the `unslop` folder next to this skill's folder) for every line you cut or write.
 
 5. **Clean up**, also when an earlier step failed. In both clones, `git worktree remove --force` every worktree whose path starts with `$run` (the agents' base worktrees too), then `rm -rf "$run"`. Confirm `git worktree list` shows none under `$run` and `git status` in each clone is unchanged. Leave other worktrees alone, stale ones included; other sessions own them.
 
@@ -93,7 +93,7 @@ Status, for an open PR: ready to merge means not a draft, `mergeable` is MERGEAB
 
 Network: read GitHub through `gh` and git fetch, and install packages from PyPI or npm when a step needs them. Make no other calls: no model providers, no swarms services, nothing the code under test would reach on its own. Toward GitHub you only read: no comments, edits, pushes, reruns or approvals. Work only inside <run>.
 
-Reply with exactly these lines, in plain words (apply the unslop skill). Status, Problem and Solution are at most 30 words each, and Why this way at most 50. Put everything else in Notes:
+Reply with exactly these lines, in plain words. Read `${CLAUDE_SKILL_DIR}/../unslop/SKILL.md` (the `unslop` folder next to this skill's folder) first and follow its rules. Status, Problem and Solution are at most 30 words each, and Why this way at most 50. Put everything else in Notes:
 
 Status: <Open, ready to merge (reason) | Open, not ready: reason | Merged YYYY-MM-DD | Closed unmerged: reason>
 Problem: ...
