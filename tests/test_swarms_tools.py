@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime as dt
 import importlib.util
+import json
 import os
 import sys
 import tempfile
@@ -402,6 +403,23 @@ class Environment(unittest.TestCase):
         self.assertEqual(in_clone, {"fetch", "worktree"})
         self.assertEqual([m["head_sha"] for m in made], ["a" * 40, "c" * 40])
         self.assertEqual(made[0]["base_sha"], "b" * 40)
+
+
+class Transcripts(unittest.TestCase):
+    def test_another_machines_sessions_merge_in(self):
+        pc = [{"harness": "codex", "path": "C:\\Users\\k\\.codex\\sessions\\a.jsonl", "tools": {"shell": 9},
+               "errors": {"exit 1: pytest": 3}, "first": "fix it", "cwd": "C:\\swarms", "start": "2026-11-03 09:00",
+               "minutes": 40, "tool_calls": 9, "error_count": 3, "machine": "pc"}]
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = Path(tmp) / "pc.json"
+            saved.write_text(json.dumps(pc), encoding="utf-8")
+            with mock.patch("pathlib.Path.home", return_value=Path(tmp) / "empty-home"):
+                rows = swarms.transcripts(7, "swarms", [str(saved)])
+                self.assertEqual(swarms.main(["transcripts", "--add", str(saved), "--json", str(Path(tmp) / "out.json")]), 0)
+            again = json.loads((Path(tmp) / "out.json").read_text(encoding="utf-8"))
+        self.assertEqual([r["machine"] for r in rows], ["pc"])
+        self.assertEqual(rows[0]["errors"].most_common(1), [("exit 1: pytest", 3)])
+        self.assertIn(pc[0], again)
 
 
 class Cli(unittest.TestCase):

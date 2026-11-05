@@ -29,7 +29,7 @@ Run it as `python3 <this folder>/scripts/swarms.py <command>`, or `py -3 ...` on
 | `ledger sync`, `ledger add`, `ledger stats` | The outcomes ledger at `tasks/daily-opportunities/outcomes.tsv`. |
 | `publish init`, `approve`, `check`, `post` | The publish flow. See the `swarms-publish` skill. |
 | `lint FILE... [--discord]` | Em dashes, curly quotes and unslop's rule 7 words. `--discord` adds the 2,000-character limit. |
-| `transcripts [--days 7] [--match swarms]` | Claude and Codex sessions from the last N days, the ones with the most errors first. |
+| `transcripts [--days 7] [--match swarms] [--json F] [--add F...]` | Claude and Codex sessions from the last N days, the ones with the most errors first. `--json` saves them for another machine (`-` prints them), and `--add` reads what another machine saved, so one retro covers both. |
 
 ## Output
 

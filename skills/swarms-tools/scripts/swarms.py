@@ -16,6 +16,7 @@ import datetime as dt
 import hashlib
 import json
 import os
+import platform
 import re
 import shutil
 import statistics
@@ -1307,7 +1308,8 @@ def summarize_codex(path: Path) -> dict:
     return {"tools": tools, "errors": errors, "stamps": stamps, "first": first, "cwd": cwd}
 
 
-def transcripts(days: int, match: str) -> list[dict]:
+def transcripts(days: int, match: str, extra: list[str] = ()) -> list[dict]:
+    """This machine's sessions, plus any other machine's saved with --json and passed in extra."""
     cutoff = time.time() - days * 86400
     out = []
     claude = Path.home() / ".claude" / "projects"
@@ -1328,8 +1330,18 @@ def transcripts(days: int, match: str) -> list[dict]:
         s["minutes"] = round(sum(g for g in gaps if g <= 600) / 60)
         s["tool_calls"] = sum(s["tools"].values())
         s["error_count"] = sum(s["errors"].values())
+        s["machine"] = platform.node().split(".")[0] or "this machine"
+    for f in extra:
+        for s in json.loads(Path(f).read_text(encoding="utf-8")):
+            s.update(tools=collections.Counter(s["tools"]), errors=collections.Counter(s["errors"]))
+            out.append(s)
     out.sort(key=lambda s: (-s["error_count"], -s["minutes"]))
     return out
+
+
+def transcripts_json(rows: list[dict]) -> str:
+    return json.dumps([{**s, "path": str(s["path"]), "tools": dict(s["tools"]), "errors": dict(s["errors"])}
+                       for s in rows], indent=1)
 
 
 # ---------------------------------------------------------------- commands
@@ -1601,11 +1613,22 @@ def cmd_lint(a):
 
 
 def cmd_transcripts(a):
-    rows = transcripts(a.days, a.match)
-    print(f"# {len(rows)} sessions in the last {a.days} days whose project matches '{a.match}', worst first")
+    rows = transcripts(a.days, a.match, a.add or [])
+    if a.json:
+        data = transcripts_json(rows[: a.limit])
+        if a.json == "-":
+            print(data)
+        else:
+            Path(a.json).write_text(data, encoding="utf-8")
+            print(f"wrote {min(len(rows), a.limit)} sessions to {a.json}")
+        return
+    machines = sorted({s["machine"] for s in rows})
+    print(f"# {len(rows)} sessions in the last {a.days} days whose project matches '{a.match}', "
+          f"from {', '.join(machines) or 'no machine'}, worst first")
     for s in rows[: a.limit]:
         top = ", ".join(f"{k} {v}" for k, v in s["tools"].most_common(4))
-        print(f"\n{s['harness']} {s['start']} {s['minutes']} active min, {s['tool_calls']} tool calls, {s['error_count']} errors")
+        print(f"\n{s['machine']} {s['harness']} {s['start']} {s['minutes']} active min, "
+              f"{s['tool_calls']} tool calls, {s['error_count']} errors")
         print(f"  {s['path']}")
         print(f"  asked: {clean_cell(s['first'])[:160]}")
         print(f"  tools: {top}")
@@ -1718,6 +1741,8 @@ def main(argv=None) -> int:
     p.add_argument("--days", type=int, default=7)
     p.add_argument("--match", default="swarms")
     p.add_argument("--limit", type=int, default=25)
+    p.add_argument("--json", metavar="FILE", help="save the sessions as JSON for another machine's --add; - prints it")
+    p.add_argument("--add", nargs="+", metavar="FILE", help="sessions another machine saved with --json")
     p.set_defaults(func=cmd_transcripts)
 
     a = parser.parse_args(argv)

@@ -13,7 +13,7 @@ Once a week, find what cost the most and propose up to three changes to the setu
 
 - `python3 $T ledger sync`, then `python3 $T ledger stats --days 7` and `--days 30`. Which types, sizes and sources merged this week, which stalled, and what Kye said when he declined or asked for changes.
 - Ledger rows listed this week with no PR. Find out why from the brief and the thread.
-- `python3 $T transcripts --days 7`. Read the worst five sessions where it matters: the errors, commands repeated by hand, and places where I corrected the agent. Note any mistake made in two sessions.
+- `python3 $T transcripts --days 7 --add <file>`, where `<file>` holds the other machine's week. Get it by running `swarms.py transcripts --days 7 --json -` from that machine's copy of `swarms-tools`: in T3, `t3_environment_links` lists linked machines, and `delegate_task` with that machine's `environmentId` can run it and reply with the JSON, which you save here. If you can't reach the other machine, say in the report that its sessions are missing. Read the worst five sessions where it matters: the errors, commands repeated by hand, and places where I corrected the agent. Note any mistake made in two sessions.
 - This week's `<tasks>/pr-status/` and `<tasks>/daily-opportunities/` reports: run times, Gaps sections and failures.
 - The current skills and AGENTS.md.
 
