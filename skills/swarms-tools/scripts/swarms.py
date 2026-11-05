@@ -558,7 +558,7 @@ def read_ledger(path: Path) -> list[dict]:
 
 SECRETS = [
     (re.compile(r"(?<=://)[^/\s@]+@"), "***@"),  # credentials in a URL
-    (re.compile(r"(?i)\b([A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD))(\s*[=:]\s*)[\"']?[^\s\"']+"), r"\1\2***"),
+    (re.compile(r"(?i)\b([A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD))([\"']?\s*[=:]\s*[\"']?)[^\s\"',}]+"), r"\1\2***"),
     (re.compile(r"\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}"
                 r"|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,})"), "***"),
 ]
@@ -1230,7 +1230,7 @@ def publish_post(task: Path, m: dict, label_wait: int) -> int:
         posted[pr["id"]] = {"url": url, "number": int(url.rstrip("/").split("/")[-1]), "title": title}
         print(f"OPENED {pr['id']} {url}", flush=True)
     # Bodies that named a PR posted after them get the real link now.
-    unfinished = []
+    unfinished: dict[str, str] = {}
     for pr in m["prs"]:
         template = (task / pr["body"]).read_text(encoding="utf-8")
         if any(ref not in posted or list(posted).index(ref) > list(posted).index(pr["id"]) for ref, _ in REF.findall(template)):
@@ -1243,7 +1243,7 @@ def publish_post(task: Path, m: dict, label_wait: int) -> int:
                 keep = task / f"{pr['id']}.linked.md"
                 keep.write_text(body_file.read_text(encoding="utf-8"), encoding="utf-8")
                 print(f"WARN [{pr['id']}] could not fill the links: {e}")
-                unfinished.append(f"gh pr edit {posted[pr['id']]['url']} --body-file {keep}")
+                unfinished[pr["id"]] = f"gh pr edit {posted[pr['id']]['url']} --body-file {keep}"
     for pr in m["prs"]:
         if not pr["label"]:
             continue
@@ -1255,6 +1255,8 @@ def publish_post(task: Path, m: dict, label_wait: int) -> int:
             body_file.write_text(render((task / pr["relabel_body"]).read_text(encoding="utf-8"), posted), encoding="utf-8")
             try:
                 gh("pr", "edit", url, "--body-file", body_file, json_out=False)
+                if unfinished.pop(pr["id"], None):
+                    print(f"LINKED {pr['id']} the wording edit filled the links")
                 got = wait_for_label(url, label_wait)
                 print(f"LABEL [{pr['id']}] {AI_LABEL} {'present after the wording edit' if got else 'still missing after the wording edit'}")
             except GhError as e:
@@ -1266,7 +1268,7 @@ def publish_post(task: Path, m: dict, label_wait: int) -> int:
     urls = " ".join(p["url"] for p in posted.values())
     if unfinished:
         print(f"RESULT PARTIAL: posted {urls}, but a body still says '(linked in a moment)'. "
-              f"Fix it with the approved text, links filled: {'; '.join(unfinished)}")
+              f"Fix it with the approved text, links filled: {'; '.join(unfinished.values())}")
     else:
         print(f"RESULT posted {urls}")
     lead = posted[m["prs"][0]["id"]]
@@ -1321,7 +1323,7 @@ def summarize_claude(path: Path) -> dict:
                 if b.get("type") == "tool_result" and b.get("is_error"):
                     text = b.get("content")
                     text = text if isinstance(text, str) else json.dumps(text)
-                    errors[clean_cell(text)[:120]] += 1
+                    errors[redact(clean_cell(text))[:120]] += 1
         elif d.get("type") == "assistant":
             for b in content if isinstance(content, list) else []:
                 if b.get("type") == "tool_use":
@@ -1351,12 +1353,13 @@ def summarize_codex(path: Path) -> dict:
             text = out if isinstance(out, str) else " ".join(o.get("text", "") for o in out or [] if isinstance(o, dict))
             # Codex wraps each command's result as JSON with an exit_code; a script error says "Script failed".
             if text.startswith("Script failed"):
-                errors[clean_cell(text)[:120]] += 1
+                errors[redact(clean_cell(text))[:120]] += 1
             for m in CODEX_EXIT.finditer(text):
                 if m.group(1) != "0":
                     rest = text[m.end():]
                     at = rest.find('"output":"')
-                    errors[clean_cell(f"exit {m.group(1)}: " + (rest[at + 10:at + 130] if at >= 0 else rest[:120]))] += 1
+                    found = rest[at + 10:at + 400] if at >= 0 else rest[:400]
+                    errors[redact(clean_cell(f"exit {m.group(1)}: {found}"))[:130]] += 1
         elif kind == "message" and p.get("role") == "user" and not first:
             for c in p.get("content") or []:
                 t = c.get("text", "") if isinstance(c, dict) else ""
@@ -1395,7 +1398,10 @@ def transcripts(days: int, match: str, extra: list[str] = ()) -> list[dict]:
             out.append(s)
     for s in out:  # a pasted key must not reach the report or another machine
         s["first"] = redact(clean_cell(s["first"]))[:300]
-        s["errors"] = collections.Counter({redact(k): v for k, v in s["errors"].items()})
+        merged = collections.Counter()
+        for text, n in s["errors"].items():  # rows from another machine may predate redaction
+            merged[redact(text)] += n
+        s["errors"] = merged
     out.sort(key=lambda s: (-s["error_count"], -s["minutes"]))
     return out
 

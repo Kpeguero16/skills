@@ -224,9 +224,9 @@ class Publish(unittest.TestCase):
 class FakeGh:
     """Answers the gh calls publish makes, and records them."""
 
-    def __init__(self, labeled_after_edit: bool = True, fail_create: str = "", fail_edit: bool = False):
+    def __init__(self, labeled_after_edit: bool = True, fail_create: str = "", fail_edits: int = 0):
         self.calls: list[tuple] = []
-        self.fail_create, self.fail_edit = fail_create, fail_edit
+        self.fail_create, self.fail_edits = fail_create, fail_edits
         self.next_number = 100
         self.edited: set[str] = set()
         self.labeled_after_edit = labeled_after_edit
@@ -241,7 +241,8 @@ class FakeGh:
             self.next_number += 1
             return f"https://github.com/{repo}/pull/{self.next_number}\n"
         if args[:2] == ("pr", "edit"):
-            if self.fail_edit:
+            if self.fail_edits:
+                self.fail_edits -= 1
                 raise swarms.GhError("HTTP 502")
             self.edited.add(args[2])
             return ""
@@ -348,7 +349,7 @@ class PublishFlow(unittest.TestCase):
         self.assertEqual(swarms.read_ledger(swarms.ledger_path())[0]["pr"], "kyegomez/swarms#101")
 
     def test_failed_link_fill_is_partial_and_names_the_fix(self):
-        code, out = self.post(FakeGh(fail_edit=True))
+        code, out = self.post(FakeGh(fail_edits=99))
         self.assertEqual(code, 3, out)
         saved = self.task / "framework.linked.md"
         self.assertIn(f"RESULT PARTIAL: posted", out)
@@ -356,6 +357,13 @@ class PublishFlow(unittest.TestCase):
         self.assertIn("Docs: https://github.com/The-Swarm-Corporation/swarms-framework-docs/pull/102",
                       saved.read_text(encoding="utf-8"))
         self.assertEqual(swarms.read_ledger(swarms.ledger_path())[0]["pr"], "kyegomez/swarms#101")
+
+    def test_a_relabel_edit_that_lands_finishes_a_failed_link_fill(self):
+        fake = FakeGh(fail_edits=1)  # the link fill fails; the relabel edit, with links filled, lands
+        code, out = self.post(fake)
+        self.assertEqual(code, 0, out)
+        self.assertIn("LINKED framework the wording edit filled the links", out)
+        self.assertIn("RESULT posted", out)
 
     def checks(self, on=None):
         fake = FakeGh()
@@ -517,6 +525,27 @@ class Secrets(unittest.TestCase):
                          "export OPENAI_API_KEY=*** and token: ***")
         self.assertEqual(swarms.redact("use sk-proj-ABCDEFGHIJKLMNOPQRST here"), "use *** here")
         self.assertEqual(swarms.redact("https://github.com/kyegomez/swarms.git"), "https://github.com/kyegomez/swarms.git")
+        self.assertEqual(swarms.redact('{"PASSWORD": "SYNTHETIC_NOT_REAL", "user": "k"}'), '{"PASSWORD": "***", "user": "k"}')
+
+    def test_errors_are_redacted_before_they_are_cut(self):
+        key = "sk-proj-" + "S" * 30
+        line = {"type": "user", "timestamp": "2026-11-05T10:00:00Z", "message": {"content": [
+            {"type": "tool_result", "is_error": True, "content": "E" * 109 + " " + key}]}}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "s.jsonl"
+            path.write_text(json.dumps(line) + "\n", encoding="utf-8")
+            errors = swarms.summarize_claude(path)["errors"]
+        self.assertEqual(list(errors), ["E" * 109 + " ***"])
+
+    def test_redacted_errors_keep_their_counts(self):
+        pc = [{"harness": "codex", "path": "a.jsonl", "tools": {}, "errors": {"ERROR TOKEN=alpha": 2, "ERROR TOKEN=beta": 3},
+               "first": "", "start": "", "minutes": 1, "tool_calls": 0, "error_count": 5, "machine": "pc"}]
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = Path(tmp) / "pc.json"
+            saved.write_text(json.dumps(pc), encoding="utf-8")
+            with mock.patch("pathlib.Path.home", return_value=Path(tmp) / "empty-home"):
+                rows = swarms.transcripts(7, "swarms", [str(saved)])
+        self.assertEqual(dict(rows[0]["errors"]), {"ERROR TOKEN=***": 5})
 
 
 class Transcripts(unittest.TestCase):
