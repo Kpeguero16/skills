@@ -1636,7 +1636,7 @@ def cmd_transcripts(a):
             print(f"  error x{n}: {text}")
 
 
-def main(argv=None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="swarms.py", description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -1745,7 +1745,11 @@ def main(argv=None) -> int:
     p.add_argument("--add", nargs="+", metavar="FILE", help="sessions another machine saved with --json")
     p.set_defaults(func=cmd_transcripts)
 
-    a = parser.parse_args(argv)
+    return parser
+
+
+def main(argv=None) -> int:
+    a = build_parser().parse_args(argv)
     if getattr(a, "cmd", None) and a.cmd[:1] == ["--"]:
         a.cmd = a.cmd[1:]
     try:

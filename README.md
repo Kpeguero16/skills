@@ -52,7 +52,7 @@ All swarms skills run on macOS and Windows. Set `SWARMS_REPO` and `SWARMS_DOCS_R
 ## Checks
 
 ```bash
-python3 scripts/check_skills.py            # frontmatter, invocation settings, links, writing rules
+python3 scripts/check_skills.py            # frontmatter, invocation settings, links, swarms.py calls, writing rules
 python3 -m unittest discover -s tests      # the swarms-tools CLI
 ```
 
