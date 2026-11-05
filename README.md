@@ -62,6 +62,6 @@ CI runs both on every pull request and every push to `main`. A skill folder with
 
 `unslop` comes from [Lauren Tan's pstack](https://github.com/cursor/plugins/tree/main/pstack/skills/unslop) under the MIT license. Her license is in [`skills/unslop/LICENSE`](skills/unslop/LICENSE). The one file added to her folder is `agents/openai.yaml`, which keeps it explicit-only in Codex.
 
-`full-send`, `full-stop`, `sol-loop`, `file-pr`, `babysit-pr`, `modernize` and `leaving-pr-comments` come unchanged from [Theo Browne's tstack](https://github.com/t3dotgg/tstack) under the MIT license. His license is in each of those folders. `swarms-own` holds my changes to how they run on swarms, so the copies can be updated from upstream.
+`full-send`, `full-stop`, `sol-loop`, `file-pr`, `babysit-pr`, `modernize` and `leaving-pr-comments` come from [Theo Browne's tstack](https://github.com/t3dotgg/tstack) under the MIT license. His license is in each of those folders. They're unchanged except for one paragraph in `file-pr` that has it apply `unslop` to the title and description, so every PR that `full-send` and `full-stop` file goes through it. `swarms-own` holds my changes to how they run on swarms, so the copies can be updated from upstream.
 
 `verify-swarms` follows the Launch, Doctor, Drive, Evidence and Cleanup layout from pstack's `create-verification-skill`. `swarms-retro` draws on Matt Pocock's `retro` skill.
