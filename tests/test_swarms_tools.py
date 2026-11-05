@@ -526,6 +526,9 @@ class Secrets(unittest.TestCase):
         self.assertEqual(swarms.redact("use sk-proj-ABCDEFGHIJKLMNOPQRST here"), "use *** here")
         self.assertEqual(swarms.redact("https://github.com/kyegomez/swarms.git"), "https://github.com/kyegomez/swarms.git")
         self.assertEqual(swarms.redact('{"PASSWORD": "SYNTHETIC_NOT_REAL", "user": "k"}'), '{"PASSWORD": "***", "user": "k"}')
+        self.assertEqual(swarms.redact("{'api_key': 'sk_live_x,y'}"), "{'api_key': '***'}")
+        self.assertEqual(swarms.redact("PASSWORD=ab,cd and TOKEN=abc}def"), "PASSWORD=*** and TOKEN=***")
+        self.assertEqual(swarms.redact('PASSWORD="unterminated'), "PASSWORD=***")
 
     def test_errors_are_redacted_before_they_are_cut(self):
         key = "sk-proj-" + "S" * 30

@@ -558,7 +558,9 @@ def read_ledger(path: Path) -> list[dict]:
 
 SECRETS = [
     (re.compile(r"(?<=://)[^/\s@]+@"), "***@"),  # credentials in a URL
-    (re.compile(r"(?i)\b([A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD))([\"']?\s*[=:]\s*[\"']?)[^\s\"',}]+"), r"\1\2***"),
+    # A quoted value goes up to its closing quote; an unquoted one, to the next space.
+    (re.compile(r"(?i)\b([A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD))([\"']?\s*[=:]\s*)"
+                r"(?:([\"'])(?:(?!\3).)*\3|[\"']?[^\s\"']+)"), r"\1\2\3***\3"),
     (re.compile(r"\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}"
                 r"|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,})"), "***"),
 ]
