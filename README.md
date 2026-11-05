@@ -56,7 +56,7 @@ python3 scripts/check_skills.py            # frontmatter, invocation settings, l
 python3 -m unittest discover -s tests      # the swarms-tools CLI
 ```
 
-CI runs both on every push. A skill folder with its own `LICENSE` is someone else's, and the writing check leaves its text as upstream wrote it.
+CI runs both on every pull request and every push to `main`. A skill folder with its own `LICENSE` is someone else's, and the writing check leaves its text as upstream wrote it.
 
 ## Credits
 

@@ -145,9 +145,12 @@ class Ledger(unittest.TestCase):
 
     def test_empty_values_never_overwrite(self):
         rows = [{"item": "x", "source": "issue #1", "pr": ""}]
-        swarms.ledger_upsert(rows, item="x", source="", est_lines="5")
+        swarms.ledger_upsert(rows, item="x", source="", est_lines="5", reason=None)
         self.assertEqual(rows[0]["source"], "issue #1")
         self.assertEqual(rows[0]["est_lines"], "5")
+        rows[0]["reason"] = "keep this"
+        swarms.ledger_upsert(rows, item="x", source=" \t\n ", reason="  ")  # whitespace is empty too
+        self.assertEqual((rows[0]["source"], rows[0]["reason"]), ("issue #1", "keep this"))
 
     def test_infer_source(self):
         self.assertEqual(swarms.infer_source("Closes #3157.\n\nDeletes it."), "issue #3157")

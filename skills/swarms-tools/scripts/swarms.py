@@ -575,8 +575,9 @@ def ledger_upsert(rows: list[dict], **fields) -> dict:
         row = {c: "" for c in LEDGER_COLUMNS}
         rows.append(row)
     for key, value in fields.items():
-        if value not in (None, ""):
-            row[key] = clean_cell(value)
+        value = clean_cell(value)  # whitespace-only counts as empty
+        if value:
+            row[key] = value
     return row
 
 

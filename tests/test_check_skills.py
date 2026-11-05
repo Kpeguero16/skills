@@ -25,7 +25,6 @@ class Links(unittest.TestCase):
         self.assertEqual(errors, ["x.md: names ../no-such-skill/, which isn't a skill in this repo"])
 
 
-
 class Cli(unittest.TestCase):
     parser = check_skills.swarms.build_parser()
 
