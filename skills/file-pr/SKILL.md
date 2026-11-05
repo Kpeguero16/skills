@@ -38,6 +38,9 @@ changes, for example `Created with <model> in <harness>.` Include subagent
 models that wrote part of the change. Use the model name the harness reports.
 If model identity is unavailable, name the harness without guessing a model.
 
+Before submission, read `../unslop/SKILL.md`, next to this skill's folder, and
+apply it to the title and description.
+
 Before submission, check the title, description, quotes, and attachments for
 secrets and private details.
 
