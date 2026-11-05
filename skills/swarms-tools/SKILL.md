@@ -33,7 +33,7 @@ Run it as `python3 <this folder>/scripts/swarms.py <command>`, or `py -3 ...` on
 
 ## Output
 
-Exit 0 is success and 1 is a failed check or missing proof. Exit 2 is a gh error that survived three tries, with backoff, on network errors such as a reset connection; read it before retrying. Lines that start with `FAIL`, `WARN`, `PASS`, `INFO`, `RESULT` or `PROOF` are meant to be quoted as they are.
+Exit 0 is success and 1 is a failed check or missing proof. Exit 2 is a gh error that survived three tries, with backoff, on network errors such as a reset connection; read it before retrying. Exit 3 is a partial publish: some PRs exist, and the `RESULT PARTIAL` line says what's left. Lines that start with `FAIL`, `WARN`, `PASS`, `INFO`, `RESULT` or `PROOF` are meant to be quoted as they are.
 
 ## Paths
 

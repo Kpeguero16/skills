@@ -175,14 +175,15 @@ class Publish(unittest.TestCase):
             m = swarms.load_manifest(Path(tmp))
             pr = m["prs"][0]
             self.assertEqual((pr["base"], pr["label"], pr["drift"]), ("master", True, "fail"))
-            self.assertEqual(swarms.approved_files(m), ["t.txt", "b.md"])
+            self.assertEqual(swarms.approved_files(m), ["publish.json", "t.txt", "b.md"])
 
 
 class FakeGh:
     """Answers the gh calls publish makes, and records them."""
 
-    def __init__(self, labeled_after_edit: bool = True):
+    def __init__(self, labeled_after_edit: bool = True, fail_create: str = "", fail_edit: bool = False):
         self.calls: list[tuple] = []
+        self.fail_create, self.fail_edit = fail_create, fail_edit
         self.next_number = 100
         self.edited: set[str] = set()
         self.labeled_after_edit = labeled_after_edit
@@ -192,9 +193,13 @@ class FakeGh:
         self.calls.append(args)
         if args[:2] == ("pr", "create"):
             repo = args[args.index("--repo") + 1]
+            if repo == self.fail_create:
+                raise swarms.GhError("HTTP 502")
             self.next_number += 1
             return f"https://github.com/{repo}/pull/{self.next_number}\n"
         if args[:2] == ("pr", "edit"):
+            if self.fail_edit:
+                raise swarms.GhError("HTTP 502")
             self.edited.add(args[2])
             return ""
         if args[:2] == ("pr", "view"):
@@ -292,6 +297,23 @@ class PublishFlow(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("DISCORD #management or product channel only", out)
 
+    def test_partial_create_still_records_the_ledger_row(self):
+        code, out = self.post(FakeGh(fail_create=swarms.DOCS))
+        self.assertEqual(code, 3, out)
+        self.assertIn("RESULT PARTIAL: [docs] gh pr create failed", out)
+        self.assertIn("not posted: docs", out)
+        self.assertEqual(swarms.read_ledger(swarms.ledger_path())[0]["pr"], "kyegomez/swarms#101")
+
+    def test_failed_link_fill_is_partial_and_names_the_fix(self):
+        code, out = self.post(FakeGh(fail_edit=True))
+        self.assertEqual(code, 3, out)
+        saved = self.task / "framework.linked.md"
+        self.assertIn(f"RESULT PARTIAL: posted", out)
+        self.assertIn(f"gh pr edit https://github.com/kyegomez/swarms/pull/101 --body-file {saved}", out)
+        self.assertIn("Docs: https://github.com/The-Swarm-Corporation/swarms-framework-docs/pull/102",
+                      saved.read_text(encoding="utf-8"))
+        self.assertEqual(swarms.read_ledger(swarms.ledger_path())[0]["pr"], "kyegomez/swarms#101")
+
     def checks(self, on=None):
         fake = FakeGh()
         shas = {"feat/x-arun": "a" * 40, "docs/x-arun": "b" * 40}
@@ -323,6 +345,19 @@ class PublishFlow(unittest.TestCase):
         self.assertTrue(any("still has placeholders: <N>" in f for f in fails), fails)
         self.assertTrue(any("no '🤖 Generated with' line" in f for f in fails), fails)
         self.assertTrue(any("names unknown PR ids: doc" in f for f in fails), fails)
+
+    def test_checks_catch_a_manifest_edit_after_approval(self):
+        swarms.main(["publish", "approve", str(self.task)])
+        self.manifest["prs"][0]["base"] = "release"
+        (self.task / "publish.json").write_text(__import__("json").dumps(self.manifest), encoding="utf-8")
+        fails = [line for line in self.checks() if line.startswith("FAIL")]
+        self.assertTrue(any("approved text changed or missing: publish.json" in f for f in fails), fails)
+
+    def test_checks_catch_a_relabel_body_without_disclosure(self):
+        (self.task / "pr_body_relabel.md").write_text("Closes #1.\n\nDocs PR: {{docs.url}}\n", encoding="utf-8")
+        swarms.main(["publish", "approve", str(self.task)])
+        fails = [line for line in self.checks() if line.startswith("FAIL")]
+        self.assertTrue(any("pr_body_relabel.md has no '🤖 Generated with' line" in f for f in fails), fails)
 
     def test_checks_fail_without_approval(self):
         fails = [line for line in self.checks() if line.startswith("FAIL")]
@@ -408,10 +443,20 @@ class Environment(unittest.TestCase):
         self.assertEqual(made[0]["base_sha"], "b" * 40)
 
 
+class Secrets(unittest.TestCase):
+    def test_redact(self):
+        self.assertEqual(swarms.redact("https://Kpeguero16:ghp_abcdefghijklmnopqrstuvwxyz0123@github.com/x.git"),
+                         "https://***@github.com/x.git")
+        self.assertEqual(swarms.redact("export OPENAI_API_KEY=sk-live-123 and token: abc"),
+                         "export OPENAI_API_KEY=*** and token: ***")
+        self.assertEqual(swarms.redact("use sk-proj-ABCDEFGHIJKLMNOPQRST here"), "use *** here")
+        self.assertEqual(swarms.redact("https://github.com/kyegomez/swarms.git"), "https://github.com/kyegomez/swarms.git")
+
+
 class Transcripts(unittest.TestCase):
     def test_another_machines_sessions_merge_in(self):
         pc = [{"harness": "codex", "path": "C:\\Users\\k\\.codex\\sessions\\a.jsonl", "tools": {"shell": 9},
-               "errors": {"exit 1: pytest": 3}, "first": "fix it", "cwd": "C:\\swarms", "start": "2026-11-03 09:00",
+               "errors": {"exit 1: pytest": 3}, "first": "fix it, OPENAI_API_KEY=sk-test-123", "cwd": "C:\\swarms", "start": "2026-11-03 09:00",
                "minutes": 40, "tool_calls": 9, "error_count": 3, "machine": "pc"}]
         with tempfile.TemporaryDirectory() as tmp:
             saved = Path(tmp) / "pc.json"
@@ -422,7 +467,8 @@ class Transcripts(unittest.TestCase):
             again = json.loads((Path(tmp) / "out.json").read_text(encoding="utf-8"))
         self.assertEqual([r["machine"] for r in rows], ["pc"])
         self.assertEqual(rows[0]["errors"].most_common(1), [("exit 1: pytest", 3)])
-        self.assertIn(pc[0], again)
+        self.assertEqual(rows[0]["first"], "fix it, OPENAI_API_KEY=***")
+        self.assertEqual(again[0]["first"], "fix it, OPENAI_API_KEY=***")
 
 
 class Cli(unittest.TestCase):

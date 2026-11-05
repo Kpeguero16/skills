@@ -43,13 +43,13 @@ A title or body can name another PR in the folder: `{{framework.url}}`, `{{frame
 
 ## Steps
 
-1. Only after I approve the exact text in this thread: `python3 $T publish approve <task dir>`. It records the hashes, so any later edit to the text fails the checks.
+1. Only after I approve the exact text in this thread: `python3 $T publish approve <task dir>`. It records the hashes of the text and `publish.json`, so any later edit to either fails the checks.
 2. `python3 $T publish check <task dir>`. If fixing a failure changes the text, show me the new text and approve again.
 3. Post now, or schedule it (below). Now: run `python3 $T publish post <task dir>` once, with a 10-minute timeout. It reruns the checks, opens the PRs, waits for the `ai-generated` label and makes the relabel edit once if needed, records the ledger row, and prints the Discord lines.
-4. After `RESULT posted`, call `link_pull_request` for each URL on an `OPENED` line, as your next call.
+4. After `RESULT posted` or `RESULT PARTIAL`, call `link_pull_request` for each URL on an `OPENED` line, as your next call.
 5. Report the `FAIL`, `WARN` and `LABEL` lines, then end with the lines after `DISCORD`, exactly as printed.
 
-`RESULT checks failed` means nothing was posted: quote the `FAIL` lines and stop. Don't rebase, edit the approved text, retry the post or post another way. `RESULT PARTIAL` means some PRs exist: say which, and don't run it again. A gh error saying `can't assign requested address` means the Mac ran out of local ports. Wait a minute and run the same command once more, since everything before the post is read-only.
+`RESULT checks failed` means nothing was posted: quote the `FAIL` lines and stop. Don't rebase, edit the approved text, retry the post or post another way. `RESULT PARTIAL` (exit 3) means some PRs exist and their ledger row is written. Say which, and don't run it again, since the checks refuse a PR that exists. When a body still says "(linked in a moment)", the line gives the `gh pr edit` command and the saved body with the links filled. Show me that command and run it only after I say so. A gh error saying `can't assign requested address` means the Mac ran out of local ports. Wait a minute and run the same command once more, since everything before the post is read-only.
 
 ## Scheduling
 

@@ -550,6 +550,20 @@ def read_ledger(path: Path) -> list[dict]:
     return rows
 
 
+SECRETS = [
+    (re.compile(r"(?<=://)[^/\s@]+@"), "***@"),  # credentials in a URL
+    (re.compile(r"(?i)\b([A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD))(\s*[=:]\s*)[\"']?[^\s\"']+"), r"\1\2***"),
+    (re.compile(r"\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}"
+                r"|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,})"), "***"),
+]
+
+
+def redact(text: str) -> str:
+    for pattern, repl in SECRETS:
+        text = pattern.sub(repl, text)
+    return text
+
+
 def clean_cell(value) -> str:
     return re.sub(r"\s+", " ", str(value if value is not None else "")).strip()
 
@@ -1025,10 +1039,15 @@ def load_manifest(task: Path) -> dict:
 
 
 def approved_files(m: dict) -> list[str]:
-    files = []
+    files = ["publish.json"]  # where it posts and how it's announced are part of what Khalil approved
     for pr in m["prs"]:
         files += [pr["title"], pr["body"]] + ([pr["relabel_body"]] if pr.get("relabel_body") else [])
     return list(dict.fromkeys(files))
+
+
+def texts(pr: dict) -> list[str]:
+    """Every file that can end up on GitHub for this PR: title, body, and the relabel body."""
+    return [pr["title"], pr["body"]] + ([pr["relabel_body"]] if pr.get("relabel_body") else [])
 
 
 def sha256(path: Path) -> str:
@@ -1062,7 +1081,7 @@ def publish_checks(task: Path, m: dict, on: str | None) -> list[str]:
     approved_at = dt.datetime.fromtimestamp(approved.stat().st_mtime, dt.timezone.utc) if approved.exists() else now_utc()
     ids = {pr["id"] for pr in m["prs"]}
     for pr in m["prs"]:
-        for name in (pr["title"], pr["body"]):
+        for name in texts(pr):
             text = (task / name).read_text(encoding="utf-8") if (task / name).exists() else ""
             unknown = sorted({ref for ref, _ in REF.findall(text)} - ids)
             if unknown:
@@ -1072,19 +1091,18 @@ def publish_checks(task: Path, m: dict, on: str | None) -> list[str]:
     else:
         want = dict(line.split("  ", 1)[::-1] for line in approved.read_text(encoding="utf-8").splitlines() if "  " in line)
         bad = [f for f in approved_files(m) if f not in want or not (task / f).exists() or sha256(task / f) != want[f]]
-        say("FAIL" if bad else "PASS", f"approved text changed or missing: {', '.join(bad)}" if bad else "approved title and body unchanged")
+        say("FAIL" if bad else "PASS", f"approved text changed or missing: {', '.join(bad)}" if bad else "approved text and publish.json unchanged")
     for pr in m["prs"]:
         repo, (owner, branch) = pr["repo"], pr["head"].split(":", 1)
         fork = f"{owner}/{repo.split('/')[1]}"
         tag = f"[{pr['id']}]"
-        for name in (pr["title"], pr["body"]):
+        for name in texts(pr):
             text = (task / name).read_text(encoding="utf-8") if (task / name).exists() else ""
             holes = sorted(set(PLACEHOLDER.findall(text)))
             if holes:
                 say("FAIL", f"{tag} {name} still has placeholders: {' '.join(holes)}")
-        body = (task / pr["body"]).read_text(encoding="utf-8") if (task / pr["body"]).exists() else ""
-        if ROBOT_LINE not in body:
-            say("FAIL", f"{tag} the body has no '{ROBOT_LINE}' line; the repo requires AI disclosure")
+            if name != pr["title"] and ROBOT_LINE not in text:
+                say("FAIL", f"{tag} {name} has no '{ROBOT_LINE}' line; the repo requires AI disclosure")
         try:
             live = gh("api", f"repos/{fork}/git/ref/heads/{branch}", "--jq", ".object.sha", json_out=False).strip()
         except GhError as e:
@@ -1183,11 +1201,16 @@ def publish_post(task: Path, m: dict, label_wait: int) -> int:
             url = create_pr(pr, title, body_file)
         except GhError as e:
             done = ", ".join(p["url"] for p in posted.values()) or "nothing"
-            print(f"RESULT PARTIAL: [{pr['id']}] gh pr create failed ({e}); already posted: {done}")
+            left = ", ".join(p["id"] for p in m["prs"] if p["id"] not in posted)
+            if posted:
+                record_post(m, posted)
+            print(f"RESULT PARTIAL: [{pr['id']}] gh pr create failed ({e}); already posted: {done}; "
+                  f"not posted: {left}. Don't rerun: the checks refuse a PR that exists.")
             return 3
         posted[pr["id"]] = {"url": url, "number": int(url.rstrip("/").split("/")[-1]), "title": title}
         print(f"OPENED {pr['id']} {url}", flush=True)
     # Bodies that named a PR posted after them get the real link now.
+    unfinished = []
     for pr in m["prs"]:
         template = (task / pr["body"]).read_text(encoding="utf-8")
         if any(ref not in posted or list(posted).index(ref) > list(posted).index(pr["id"]) for ref, _ in REF.findall(template)):
@@ -1197,7 +1220,10 @@ def publish_post(task: Path, m: dict, label_wait: int) -> int:
                 gh("pr", "edit", posted[pr["id"]]["url"], "--body-file", body_file, json_out=False)
                 print(f"LINKED {pr['id']} body now names the other PRs")
             except GhError as e:
+                keep = task / f"{pr['id']}.linked.md"
+                keep.write_text(body_file.read_text(encoding="utf-8"), encoding="utf-8")
                 print(f"WARN [{pr['id']}] could not fill the links: {e}")
+                unfinished.append(f"gh pr edit {posted[pr['id']]['url']} --body-file {keep}")
     for pr in m["prs"]:
         if not pr["label"]:
             continue
@@ -1216,11 +1242,31 @@ def publish_post(task: Path, m: dict, label_wait: int) -> int:
         else:
             print(f"WARN [{pr['id']}] {AI_LABEL} missing and no relabel_body to re-run the labeler")
     shutil.rmtree(scratch, ignore_errors=True)
+    record_post(m, posted)
+    urls = " ".join(p["url"] for p in posted.values())
+    if unfinished:
+        print(f"RESULT PARTIAL: posted {urls}, but a body still says '(linked in a moment)'. "
+              f"Fix it with the approved text, links filled: {'; '.join(unfinished)}")
+    else:
+        print(f"RESULT posted {urls}")
+    lead = posted[m["prs"][0]["id"]]
+    if m.get("security"):
+        print("DISCORD #management or product channel only: this is a security PR")
+    else:
+        print("DISCORD")
+    print(lead["title"])
+    print(lead["url"])
+    return 3 if unfinished else 0
+
+
+def record_post(m: dict, posted: dict[str, dict]) -> None:
+    """The ledger row for the lead PR, written as soon as it exists."""
     path = ledger_path()
     rows = read_ledger(path)
     first = m["prs"][0]
-    ledger_upsert(rows, item=m.get("item") or posted[first["id"]]["title"], pr=f"{first['repo']}#{posted[first['id']]['number']}",
-                  brief=m.get("brief"), source=m.get("source"), type=pr_type(posted[first["id"]]["title"]),
+    lead = posted[first["id"]]
+    ledger_upsert(rows, item=m.get("item") or lead["title"], pr=f"{first['repo']}#{lead['number']}",
+                  brief=m.get("brief"), source=m.get("source"), type=pr_type(lead["title"]),
                   est_lines=m.get("est_lines"), listed=m.get("listed"), state="open",
                   opened=local(now_utc()))
     try:
@@ -1228,15 +1274,6 @@ def publish_post(task: Path, m: dict, label_wait: int) -> int:
         print(f"LEDGER {path}")
     except OSError as e:
         print(f"WARN ledger not written: {e}")
-    print("RESULT posted " + " ".join(p["url"] for p in posted.values()))
-    lead = posted[first["id"]]
-    if m.get("security"):
-        print("DISCORD #management or product channel only: this is a security PR")
-    else:
-        print("DISCORD")
-    print(lead["title"])
-    print(lead["url"])
-    return 0
 
 
 # ---------------------------------------------------------------- transcripts
@@ -1336,6 +1373,9 @@ def transcripts(days: int, match: str, extra: list[str] = ()) -> list[dict]:
         for s in json.loads(Path(f).read_text(encoding="utf-8")):
             s.update(tools=collections.Counter(s["tools"]), errors=collections.Counter(s["errors"]))
             out.append(s)
+    for s in out:  # a pasted key must not reach the report or another machine
+        s["first"] = redact(clean_cell(s["first"]))[:300]
+        s["errors"] = collections.Counter({redact(k): v for k, v in s["errors"].items()})
     out.sort(key=lambda s: (-s["error_count"], -s["minutes"]))
     return out
 
@@ -1542,7 +1582,7 @@ def cmd_doctor(a):
             continue
         remotes = read_remotes(clone)
         up = [n for n, u in remotes.items() if repo.lower() in u.lower() and USER.lower() not in u.lower()]
-        say("PASS" if up else "FAIL", f"{repo}: clone {clone}, remotes {', '.join(f'{n}={u}' for n, u in remotes.items())}")
+        say("PASS" if up else "FAIL", f"{repo}: clone {clone}, remotes {', '.join(f'{n}={redact(u)}' for n, u in remotes.items())}")
     py = venv_python()
     if py.exists():
         p = subprocess.run([str(py), "--version"], capture_output=True, text=True)
