@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 spec = importlib.util.spec_from_file_location("swarms_cli", ROOT / "skills/swarms-tools/scripts/swarms.py")
@@ -376,6 +377,31 @@ class Environment(unittest.TestCase):
                 "origin": "https://github.com/Kpeguero16/swarms.git",
             })
             self.assertEqual(swarms.upstream_remote(Path(tmp), swarms.SWARMS), "upstream")
+
+    def test_checkout_runs_only_fetch_and_worktree_in_the_main_clone(self):
+        """AGENTS.md: other sessions share the main clones, so only fetch and worktree run there."""
+        calls = []
+
+        def fake_git(path, *args, check=True):
+            calls.append((Path(path), args))
+            return {"merge-base": "b" * 40, "rev-parse": "c" * 40}.get(args[0], "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            clone, run = Path(tmp) / "clone", Path(tmp) / "run"
+            run.mkdir()
+            (run / "swarms-12.json").write_text('{"baseRefName": "master", "headRefOid": "' + "a" * 40 + '"}',
+                                                encoding="utf-8")
+            os.environ["SWARMS_REPO"] = str(clone)
+            try:
+                with mock.patch.object(swarms, "git", fake_git), \
+                        mock.patch.object(swarms, "upstream_remote", lambda c, r: "upstream"):
+                    made = swarms.checkout(run, [(swarms.SWARMS, "pr:12"), (swarms.SWARMS, "master")])
+            finally:
+                del os.environ["SWARMS_REPO"]
+        in_clone = {args[0] for path, args in calls if path == clone}
+        self.assertEqual(in_clone, {"fetch", "worktree"})
+        self.assertEqual([m["head_sha"] for m in made], ["a" * 40, "c" * 40])
+        self.assertEqual(made[0]["base_sha"], "b" * 40)
 
 
 class Cli(unittest.TestCase):

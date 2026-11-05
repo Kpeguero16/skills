@@ -15,7 +15,7 @@ For every PR I opened today in the swarms and swarms docs repos, give its status
 2. **Check out.** `python3 $T checkout --run "$run"` fetches once per clone, so parallel agents never fight over fetch locks. It makes a detached worktree at each PR head (`$run/wt-<repo>-<n>`) and at its merge base (`$run/base-<repo>-<n>`), where `<repo>` is `swarms` or `swarms-framework-docs`.
 3. **Dispatch.** Launch one fresh `general-purpose` agent per PR with the brief below, all in one message so they run in parallel, and wait for every one. Merged and closed PRs get an agent too. A dozen PRs take about 10 minutes.
 4. **Assemble.** Sort each repo's PRs by `createdAt` and fill the format below. From the facts JSON, take the size line and the status of a merged or closed PR, dated in local time. Take the reason for a close from the agent. Everything else comes from the agent's reply. Agents run long, so cut every answer to its main point, at most 2 lines (3 when the defense needs its proof). Output the result in a fenced code block so it copies verbatim. Below it, list **Heads-up** items: each agent's `Notes`, plus anything left unproven and why. Apply `unslop` to every line you cut or write.
-5. **Clean up**, also after a failure: `python3 $T cleanup --run "$run"`. Check that it printed no `still listed` line and that `git status` in each clone is unchanged.
+5. **Clean up**, also after a failure: `python3 $T cleanup --run "$run"`. Check that it printed no `still listed` line. Don't run `git status` in the main clones: it can take their index lock while another session works there.
 
 ## Format
 

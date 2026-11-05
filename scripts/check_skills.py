@@ -3,7 +3,7 @@
 
 - Frontmatter: `name` matches the folder, and `description` is there and under 1,024 characters.
 - Invocation: `disable-model-invocation: true` and agents/openai.yaml's `allow_implicit_invocation: false` agree.
-- Links: every `../<skill>/...` path a skill names exists in this repo.
+- Links: every `../<skill>/<path>` a skill names exists in this repo, down to the file.
 - Writing, for skills written here: no em dashes, en dashes, curly quotes or unslop rule 7 words.
   A skill folder with its own LICENSE is someone else's (unslop, Theo's tstack copies) and keeps its upstream text.
 - The README's skill table lists every skill.
@@ -53,6 +53,21 @@ def implicit_policy(skill: Path) -> bool | None:
     return None if not m else m.group(1) == "true"
 
 
+LINK = re.compile(r"\.\./([a-z0-9-]+)/([A-Za-z0-9_./-]*)")
+
+
+def link_errors(rel: str, body: str) -> list[str]:
+    """Each ../<skill>/<path> must name a skill in this repo, and the file or folder after it must exist."""
+    errors = []
+    for target, rest in sorted(set(LINK.findall(body))):
+        rest = rest.rstrip(".")  # a path that ends a sentence
+        if not (SKILLS / target).is_dir():
+            errors.append(f"{rel}: names ../{target}/, which isn't a skill in this repo")
+        elif rest and not (SKILLS / target / rest).exists():
+            errors.append(f"{rel}: names ../{target}/{rest}, which doesn't exist")
+    return errors
+
+
 def main() -> int:
     errors: list[str] = []
     sizes = []
@@ -82,9 +97,7 @@ def main() -> int:
         for path in sorted(skill.rglob("*.md")):
             body = path.read_text(encoding="utf-8")
             rel = path.relative_to(ROOT).as_posix()
-            for target in sorted(set(re.findall(r"\.\./([a-z0-9-]+)/", body))):
-                if not (SKILLS / target).is_dir():
-                    errors.append(f"{rel}: names ../{target}/, which isn't a skill in this repo")
+            errors.extend(link_errors(rel, body))
             if (skill / "LICENSE").exists():
                 continue
             for line, msg in swarms.lint_text(body, vocabulary=vocabulary):

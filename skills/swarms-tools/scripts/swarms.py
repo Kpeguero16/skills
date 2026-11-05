@@ -956,15 +956,16 @@ def checkout(run: Path, items: list[tuple[str, str]], base_too: bool = True) -> 
                 git(clone, "worktree", "add", "--detach", "--quiet", wt, head)
                 entry = {"repo": repo, "ref": ref, "head": str(wt), "head_sha": head}
                 if base_too:
-                    mb = git(clone, "merge-base", head, f"{remote}/{facts[ref]['baseRefName']}")
+                    # Queries run in the new worktree: the main clone only ever sees fetch and worktree.
+                    mb = git(wt, "merge-base", "HEAD", f"{remote}/{facts[ref]['baseRefName']}")
                     bwt = run / f"base-{SHORT[repo]}-{n}"
                     git(clone, "worktree", "add", "--detach", "--quiet", bwt, mb)
                     entry.update(base=str(bwt), base_sha=mb)
             else:
-                sha = git(clone, "rev-parse", ref if re.fullmatch(r"[0-9a-f]{7,40}", ref) else f"{remote}/{ref}")
                 wt = run / f"wt-{SHORT[repo]}-{re.sub(r'[^A-Za-z0-9._-]', '-', ref)}"
-                git(clone, "worktree", "add", "--detach", "--quiet", wt, sha)
-                entry = {"repo": repo, "ref": ref, "head": str(wt), "head_sha": sha}
+                start = ref if re.fullmatch(r"[0-9a-f]{7,40}", ref) else f"{remote}/{ref}"
+                git(clone, "worktree", "add", "--detach", "--quiet", wt, start)
+                entry = {"repo": repo, "ref": ref, "head": str(wt), "head_sha": git(wt, "rev-parse", "HEAD")}
             made.append(entry)
     return made
 
