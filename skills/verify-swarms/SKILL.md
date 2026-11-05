@@ -14,7 +14,7 @@ Proof for a swarms change is a check you ran in this session that fails on the b
 swarms is a library, so launching means trees to run against and a pinned environment.
 
 1. `python3 $T doctor`. Fix any `FAIL` first.
-2. Make an empty run folder outside every clone, such as `run=$(mktemp -d)`.
+2. Make an empty run folder outside every clone, such as `run=$(python3 -c "import os, tempfile; print(os.path.realpath(tempfile.mkdtemp()))")`. It works on Windows too, with `python` and your shell's syntax.
 3. Make the trees:
    - Someone's PR: `python3 $T checkout --run "$run" 3166` gives `wt-swarms-3166` at the PR head and `base-swarms-3166` at its merge base. Use `docs#400` for a docs PR.
    - Your own branch in a T3 worktree: that worktree is the head. `python3 $T checkout --run "$run" --no-base master` gives the base.

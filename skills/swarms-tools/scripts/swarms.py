@@ -487,6 +487,7 @@ def pr_facts(url: str) -> dict:
         and pr.get("mergeStateStatus") not in ("BLOCKED", "DIRTY")
         and pr.get("reviewDecision") not in ("CHANGES_REQUESTED", "REVIEW_REQUIRED")
         and not pending and not pr_caused and not pr["unanswered"] and not gone
+        and not any(w["state"] != "MERGED" for w in pr["waits_on"])
     )
     pr["hint"], pr["signals"] = hint, signals
     for key in ("comments", "reviews", "commits", "body"):
@@ -574,9 +575,13 @@ def write_ledger(path: Path, rows: list[dict]) -> None:
     for row in rows:
         body.append("\t".join(clean_cell(row.get(c, "")) for c in LEDGER_COLUMNS))
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".outcomes.", suffix=".tsv")
-    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
-        f.write("\n".join(body) + "\n")
-    os.replace(tmp, path)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            f.write("\n".join(body) + "\n")
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 def ledger_upsert(rows: list[dict], **fields) -> dict:
@@ -857,7 +862,7 @@ def which_swarms(tree: Path, python: Path) -> Path:
                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
     if p.returncode != 0:
         raise SystemExit(f"FAIL import swarms in {tree}:\n{p.stderr[-2000:]}")
-    return Path(p.stdout.strip().splitlines()[-1])
+    return Path(p.stdout.strip().splitlines()[-1]).resolve()
 
 
 def resolve_command(cmd: list[str], python: Path) -> list[str]:
@@ -867,7 +872,8 @@ def resolve_command(cmd: list[str], python: Path) -> list[str]:
         return [str(python), *cmd[1:]]
     if cmd[0] in ("pytest", "black", "ruff"):
         return [str(python), "-m", *cmd]
-    return cmd
+    found = shutil.which(cmd[0])  # Windows runs a .cmd shim such as npx only by its full path
+    return [found, *cmd[1:]] if found else cmd
 
 
 def run_pinned(tree: Path, cmd: list[str], python: Path, log: Path | None = None) -> int:
@@ -1801,6 +1807,7 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
+    for stream in (sys.stdin, sys.stdout):  # Windows defaults to its code page
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     sys.exit(main())

@@ -5,6 +5,8 @@ import datetime as dt
 import importlib.util
 import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -115,6 +117,30 @@ class Checks(unittest.TestCase):
         self.assertEqual(dict(swarms.removed_lines_by_file(diff)),
                          {"x.py": ["def helper_that_nobody_calls():", "return compute_the_value(1)"]})
 
+    def test_docs_pr_is_not_ready_while_its_framework_pr_is_open(self):
+        def fake(*args, json_out=True, **kwargs):
+            args = tuple(map(str, args))
+            if args[:3] == ("pr", "view", "https://github.com/The-Swarm-Corporation/swarms-framework-docs/pull/358"):
+                return {"number": 358, "body": "Tracks https://github.com/kyegomez/swarms/pull/3037.",
+                        "baseRefName": "main", "headRefOid": "a" * 40, "createdAt": "2026-11-01T00:00:00Z",
+                        "updatedAt": "2026-11-04T00:00:00Z", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
+                        "reviewDecision": "", "isDraft": False, "labels": [], "comments": [], "reviews": [],
+                        "commits": [], "statusCheckRollup": [], "deletions": 0}
+            if args[:3] == ("pr", "view", "3037"):
+                return {"state": state}
+            if args[:2] == ("api", "--paginate"):
+                return []
+            if args[0] == "api" and "/compare/" in args[1]:
+                return {"behind_by": 0, "files": []}
+            raise AssertionError(f"unexpected gh call {args}")
+
+        url = "https://github.com/The-Swarm-Corporation/swarms-framework-docs/pull/358"
+        with mock.patch.object(swarms, "gh", fake):
+            state = "OPEN"
+            self.assertFalse(swarms.pr_facts(url)["ready"])
+            state = "MERGED"
+            self.assertTrue(swarms.pr_facts(url)["ready"])
+
     def test_bots(self):
         self.assertTrue(swarms.is_bot("coderabbitai[bot]"))
         self.assertTrue(swarms.is_bot("github-actions"))
@@ -142,6 +168,14 @@ class Ledger(unittest.TestCase):
             self.assertIn("| CHORE | 1 | 1 | 0 | 0 | 1.5 |", stats)
             self.assertIn("| 100 to 299 | 1 | 0 | 0 | 1 |  |", stats)
             self.assertIn("kyegomez/swarms#2 [FIX][b][Fix b] with a tab: Not needed. Thanks", stats)
+
+    def test_failed_write_leaves_no_temp_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "outcomes.tsv"
+            with mock.patch.object(swarms.os, "replace", side_effect=PermissionError("locked")):
+                with self.assertRaises(PermissionError):
+                    swarms.write_ledger(path, [{"pr": "x#1"}])
+            self.assertEqual(list(Path(tmp).iterdir()), [])
 
     def test_empty_values_never_overwrite(self):
         rows = [{"item": "x", "source": "issue #1", "pr": ""}]
@@ -401,7 +435,24 @@ class Environment(unittest.TestCase):
         py = Path("/venv/bin/python")
         self.assertEqual(swarms.resolve_command(["pytest", "-q"], py), [str(py), "-m", "pytest", "-q"])
         self.assertEqual(swarms.resolve_command(["python", "x.py"], py), [str(py), "x.py"])
-        self.assertEqual(swarms.resolve_command(["npx", "mint"], py), ["npx", "mint"])
+        self.assertEqual(swarms.resolve_command(["no-such-tool-here", "x"], py), ["no-such-tool-here", "x"])
+
+    def test_resolve_command_runs_shims_on_path(self):
+        """npx is npx.cmd on Windows, which runs only by its full path."""
+        with tempfile.TemporaryDirectory() as tmp:
+            if os.name == "nt":
+                shim = Path(tmp) / "fakeshim.cmd"
+                shim.write_text("@echo shim ok\r\n", encoding="utf-8")
+            else:
+                shim = Path(tmp) / "fakeshim"
+                shim.write_text("#!/bin/sh\necho shim ok\n", encoding="utf-8")
+                shim.chmod(0o755)
+            with mock.patch.dict(os.environ, {"PATH": tmp + os.pathsep + os.environ.get("PATH", "")}):
+                cmd = swarms.resolve_command(["fakeshim"], Path(sys.executable))
+                out = subprocess.run(cmd, capture_output=True, text=True).stdout
+        self.assertTrue(Path(cmd[0]).is_absolute(), cmd)
+        self.assertEqual(Path(cmd[0]).name.lower(), shim.name.lower())
+        self.assertIn("shim ok", out)
 
     def test_read_remotes_from_config(self):
         with tempfile.TemporaryDirectory() as tmp:
