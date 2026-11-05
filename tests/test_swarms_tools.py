@@ -121,13 +121,15 @@ class Checks(unittest.TestCase):
         def fake(*args, json_out=True, **kwargs):
             args = tuple(map(str, args))
             if args[:3] == ("pr", "view", "https://github.com/The-Swarm-Corporation/swarms-framework-docs/pull/358"):
-                return {"number": 358, "body": "Tracks https://github.com/kyegomez/swarms/pull/3037.",
+                return {"number": 358, "body": body,
                         "baseRefName": "main", "headRefOid": "a" * 40, "createdAt": "2026-11-01T00:00:00Z",
                         "updatedAt": "2026-11-04T00:00:00Z", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
                         "reviewDecision": "", "isDraft": False, "labels": [], "comments": [], "reviews": [],
                         "commits": [], "statusCheckRollup": [], "deletions": 0}
-            if args[:3] == ("pr", "view", "3037"):
+            if args[:3] == ("pr", "view", "3124"):
                 return {"state": state}
+            if args[:3] == ("pr", "view", "2606"):
+                raise swarms.GhError("gh pr view 2606: GraphQL: Could not resolve to a PullRequest with the number of 2606.")
             if args[:2] == ("api", "--paginate"):
                 return []
             if args[0] == "api" and "/compare/" in args[1]:
@@ -135,11 +137,18 @@ class Checks(unittest.TestCase):
             raise AssertionError(f"unexpected gh call {args}")
 
         url = "https://github.com/The-Swarm-Corporation/swarms-framework-docs/pull/358"
+        body = "Tracks https://github.com/kyegomez/swarms/pull/3124."
         with mock.patch.object(swarms, "gh", fake):
             state = "OPEN"
             self.assertFalse(swarms.pr_facts(url)["ready"])
             state = "MERGED"
             self.assertTrue(swarms.pr_facts(url)["ready"])
+            # Hand-written bodies name the PR in short form, next to the issue it closes.
+            body = "Merge after kyegomez/swarms#3124. Closes kyegomez/swarms#2606."
+            state = "OPEN"
+            facts = swarms.pr_facts(url)
+            self.assertEqual(facts["waits_on"], [{"pr": "kyegomez/swarms#3124", "state": "OPEN"}])
+            self.assertFalse(facts["ready"])
 
     def test_bots(self):
         self.assertTrue(swarms.is_bot("coderabbitai[bot]"))
@@ -392,6 +401,12 @@ class PublishFlow(unittest.TestCase):
         swarms.main(["publish", "approve", str(self.task)])
         fails = [line for line in self.checks() if line.startswith("FAIL")]
         self.assertTrue(any("pr_body_relabel.md has no '🤖 Generated with' line" in f for f in fails), fails)
+
+    def test_checks_catch_a_title_that_names_a_later_pr(self):
+        (self.task / "pr_title.txt").write_text("[FEAT][X.arun][Add it (docs in {{docs.url}})]\n", encoding="utf-8")
+        swarms.main(["publish", "approve", str(self.task)])
+        fails = [line for line in self.checks() if line.startswith("FAIL")]
+        self.assertTrue(any("pr_title.txt names docs, which posts after it" in f for f in fails), fails)
 
     def test_checks_fail_without_approval(self):
         fails = [line for line in self.checks() if line.startswith("FAIL")]

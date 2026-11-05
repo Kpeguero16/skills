@@ -444,10 +444,15 @@ def pr_facts(url: str) -> dict:
     # A docs PR waits for the swarms PR it documents.
     pr["waits_on"] = []
     if repo == DOCS:
-        for num in sorted(set(re.findall(r"github\.com/kyegomez/swarms/pull/(\d+)", pr.get("body") or ""))):
+        body = pr.get("body") or ""
+        nums = set(re.findall(r"github\.com/kyegomez/swarms/pull/(\d+)", body))
+        nums |= set(re.findall(r"\bkyegomez/swarms#(\d+)", body))  # "Merge after kyegomez/swarms#3124"
+        for num in sorted(nums, key=int):
             try:
                 state = gh("pr", "view", num, "--repo", SWARMS, "--json", "state")["state"]
-            except GhError:
+            except GhError as e:
+                if "Could not resolve to a PullRequest" in str(e):
+                    continue  # an issue, such as the one the framework PR closes; nothing waits on it
                 state = "UNKNOWN"
             pr["waits_on"].append({"pr": f"{SWARMS}#{num}", "state": state})
 
@@ -1086,6 +1091,13 @@ def publish_checks(task: Path, m: dict, on: str | None) -> list[str]:
     approved = task / "approved.sha256"
     approved_at = dt.datetime.fromtimestamp(approved.stat().st_mtime, dt.timezone.utc) if approved.exists() else now_utc()
     ids = {pr["id"] for pr in m["prs"]}
+    order = [pr["id"] for pr in m["prs"]]
+    for i, pr in enumerate(m["prs"]):
+        title = (task / pr["title"]).read_text(encoding="utf-8") if (task / pr["title"]).exists() else ""
+        later = sorted({ref for ref, _ in REF.findall(title)} & set(order[i:]))
+        if later:
+            say("FAIL", f"[{pr['id']}] {pr['title']} names {', '.join(later)}, which posts after it; "
+                        "titles aren't edited after posting, so reorder publish.json")
     for pr in m["prs"]:
         for name in texts(pr):
             text = (task / name).read_text(encoding="utf-8") if (task / name).exists() else ""
@@ -1198,7 +1210,9 @@ def publish_post(task: Path, m: dict, label_wait: int) -> int:
     scratch = Path(tempfile.mkdtemp(prefix="swarms-publish-"))
     for pr in m["prs"]:
         title = render((task / pr["title"]).read_text(encoding="utf-8").strip(), posted)
-        if "(linked in a moment)" in title:
+        if "(linked in a moment)" in title:  # publish check refuses this order; kept as a guard
+            if posted:
+                record_post(m, posted)
             print(f"RESULT PARTIAL: [{pr['id']}] title refers to a PR posted after it; reorder publish.json")
             return 3
         body_file = scratch / f"{pr['id']}.md"
