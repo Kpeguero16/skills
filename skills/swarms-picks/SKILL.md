@@ -114,4 +114,4 @@ The check that should fail on master and pass on the branch, or for a deletion, 
 
 ## 7. When I pick
 
-When I name the items to run, such as "run 1, 3 and 5", start one T3 thread per item with `create_threads` in the swarms project, each in a new worktree from `upstream/master`, with the prompt `Own it, full stop: <brief path>`. Reply with each thread's link.
+When I name the items to run, such as "run 1, 3 and 5", run `git fetch upstream master` in the swarms clone, then start one T3 thread per item with `t3_thread_launch`: the swarms project's `projectId`, `workspaceStrategy` set to `{type: "worktree", baseRef: "upstream/master"}`, and the message `Own it, full stop: <brief path>`. Don't use `create_threads`. It has no worktree option, so its threads land in the main clone. Reply with each thread's link.
