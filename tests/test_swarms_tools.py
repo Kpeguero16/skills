@@ -195,6 +195,24 @@ class Ledger(unittest.TestCase):
         swarms.ledger_upsert(rows, item="x", source=" \t\n ", reason="  ")  # whitespace is empty too
         self.assertEqual((rows[0]["source"], rows[0]["reason"]), ("issue #1", "keep this"))
 
+    def test_a_post_under_another_item_name_lands_on_the_pick_with_the_same_brief(self):
+        clone = Path(tempfile.gettempdir()) / "swarms-clone"
+        brief = "tasks/handoffs/2026-11-05/3-dead-test.md"
+        pick = {"listed": "2026-11-05", "item": "[TEST][t][Delete the dead test]", "source": "deletion",
+                "est_lines": "55", "pr": "", "brief": brief, "state": "listed"}
+        with mock.patch.dict(os.environ, {"SWARMS_REPO": str(clone)}):
+            rows = [dict(pick)]  # posted later under a reworded item and the absolute brief
+            swarms.ledger_upsert(rows, item="Delete the dead test", pr="kyegomez/swarms#9", source="daily-opportunities",
+                                 est_lines="57", brief=str(clone / brief), state="open")
+            # Rows the old code already split: sync folds them back into one.
+            split = [dict(pick), {"listed": "2026-11-05", "item": "Delete the dead test", "pr": "kyegomez/swarms#9",
+                                  "brief": str(clone / brief), "state": "merged", "source": "daily-opportunities"}]
+            self.assertEqual(swarms.fold_by_brief(split), 1)
+        for got in (rows, split):
+            self.assertEqual(len(got), 1)
+            self.assertEqual((got[0]["pr"], got[0]["item"], got[0]["source"], got[0]["est_lines"]),
+                             ("kyegomez/swarms#9", "[TEST][t][Delete the dead test]", "deletion", "55"))
+
     def test_infer_source(self):
         self.assertEqual(swarms.infer_source("Closes #3157.\n\nDeletes it."), "issue #3157")
         self.assertEqual(swarms.infer_source("No issue."), "")
