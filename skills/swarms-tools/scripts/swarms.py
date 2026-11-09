@@ -1471,6 +1471,97 @@ def cmd_cleanup(a):
         print(line)
 
 
+ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+LOG_STAMP = re.compile(r"^\S*\d{4}-\d\d-\d\dT[\d:.]+Z ")
+FAILURE_LINES = [
+    (re.compile(r"^(?:FAILED|ERROR) (\S+)"), lambda m: m.group(0).split(" - ")[0]),  # pytest
+    (re.compile(r"^(\S+\.pyi?):\d+:\d+: ([A-Z]+\d+) (.*)"), lambda m: f"{m[1]}: {m[2]} {m[3]}"),  # ruff, no line numbers
+    (re.compile(r"^would reformat (\S+)"), lambda m: m.group(0)),  # black
+    (re.compile(r"^[\d-]+ [\d:]+ \| ERROR +\| (__main__:test_\w+):\d+"), lambda m: m[1]),  # tests/test_main_features.py
+]
+
+
+def log_failures(log: str) -> set[str]:
+    """The failing tests and lint findings in a job log, without timestamps, colors or line numbers."""
+    found = set()
+    for raw in log.splitlines():
+        line = LOG_STAMP.sub("", ANSI.sub("", raw)).strip()
+        for pattern, key in FAILURE_LINES:
+            m = pattern.match(line)
+            if m:
+                found.add(key(m))
+                break
+    return found
+
+
+def job_log(repo: str, job_id) -> str:
+    return gh("api", "--allow-escape-sequences", f"repos/{repo}/actions/jobs/{job_id}/logs", json_out=False)
+
+
+def base_jobs(repo: str, sha: str) -> dict[str, dict]:
+    """The newest completed run of each check on the default branch, over the 10 commits up to sha."""
+    jobs: dict[str, dict] = {}
+    commits = gh("api", f"repos/{repo}/commits?sha={sha}&per_page=10") or []
+    for c in commits:
+        runs = gh("api", f"repos/{repo}/commits/{c['sha']}/check-runs?per_page=100") or {}
+        for run in runs.get("check_runs", []):
+            if run.get("status") == "completed" and run["name"] not in jobs:
+                jobs[run["name"]] = run
+    return jobs
+
+
+def ci_report(repo: str, number: int) -> tuple[list[str], int]:
+    """Each failing check on the PR, and its failures that the same job didn't have on the base it forked from."""
+    base = DEFAULT_BRANCH.get(repo, "main")
+    pr = gh("pr", "view", str(number), "--repo", repo, "--json", "statusCheckRollup,headRefOid")
+    jobs, lines, new, unknown = None, [], False, False
+    for check in pr.get("statusCheckRollup") or []:
+        name = check.get("name") or check.get("context", "")
+        if name in NOISE_CHECKS.get(repo, set()):
+            continue
+        if (check.get("status") or "").upper() != "COMPLETED" and "context" not in check:
+            lines.append(f"INFO {name}: still running")
+            continue
+        if (check.get("conclusion") or check.get("state") or "").upper() in ("SUCCESS", "NEUTRAL", "SKIPPED"):
+            continue
+        m = re.search(r"/job/(\d+)", check.get("detailsUrl") or "")
+        if not m:
+            lines.append(f"WARN {name}: failed, and it isn't a GitHub Actions job, so there is no log to compare")
+            unknown = True
+            continue
+        if jobs is None:  # the base as the PR forked from it, so later fixes on it don't count against the PR
+            fork = gh("api", f"repos/{repo}/compare/{base}...{pr['headRefOid']}")["merge_base_commit"]["sha"]
+            jobs = base_jobs(repo, fork)
+        on_base = jobs.get(name)
+        if on_base is None:
+            lines.append(f"WARN {name}: failed, and it hasn't run on {base} lately")
+            unknown = True
+            continue
+        if on_base.get("conclusion") in ("success", "neutral", "skipped"):
+            lines.append(f"FAIL {name}: fails here and passes on {base}")
+            new = True
+            continue
+        here, there = log_failures(job_log(repo, m.group(1))), log_failures(job_log(repo, on_base["id"]))
+        if not here:
+            lines.append(f"WARN {name}: fails here and on {base}, and the log names no test or lint finding")
+            unknown = True
+            continue
+        only = sorted(here - there)
+        lines.append(f"{'FAIL' if only else 'PASS'} {name}: {len(here)} failures here, {len(only)} not on {base}")
+        lines += [f"  {f}" for f in only]
+        new = new or bool(only)
+    verdict = "new failures" if new else "unknown" if unknown else "clean"
+    lines.append(f"RESULT {verdict}")
+    return lines, 1 if new or unknown else 0
+
+
+def cmd_ci(a):
+    repo = {"swarms": SWARMS, "docs": DOCS}[a.repo]
+    lines, code = ci_report(repo, a.number)
+    print("\n".join(lines))
+    return code
+
+
 def cmd_status(a):
     data = collect_status()
     out = Path(a.out) if a.out else tasks_dir() / "pr-status" / f"{dt.date.today()}.json"
@@ -1736,6 +1827,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("status", help="facts, signals and a verdict hint for every open PR")
     p.add_argument("--out")
     p.set_defaults(func=cmd_status)
+
+    p = sub.add_parser("ci", help="the CI failures a PR has that the default branch's same jobs don't")
+    p.add_argument("number", type=int)
+    p.add_argument("--repo", choices=["swarms", "docs"], default="swarms")
+    p.set_defaults(func=cmd_ci)
 
     p = sub.add_parser("ledger", help="the outcomes ledger: sync, add or stats")
     p.add_argument("action", choices=["sync", "add", "stats"])
