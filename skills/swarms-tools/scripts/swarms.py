@@ -591,12 +591,46 @@ def write_ledger(path: Path, rows: list[dict]) -> None:
         raise
 
 
+PICK_FIELDS = ("listed", "item", "source", "est_lines")
+
+
+def brief_key(brief) -> str:
+    """A brief path in one comparable form; relative paths sit under the swarms clone."""
+    brief = clean_cell(brief)
+    if not brief:
+        return ""
+    path = Path(brief).expanduser()
+    return os.path.normpath(str(path if path.is_absolute() else swarms_clone() / path))
+
+
+def pick_for(rows: list[dict], brief) -> dict | None:
+    key = brief_key(brief)
+    return next((r for r in rows if key and not r.get("pr") and brief_key(r.get("brief")) == key), None)
+
+
+def fold_by_brief(rows: list[dict]) -> int:
+    """Merge each unlinked pick into the PR row that shares its brief, keeping the pick's planning fields."""
+    folded = 0
+    for row in [r for r in rows if r.get("pr")]:
+        pick = pick_for(rows, row.get("brief"))
+        if pick is None:
+            continue
+        row.update({k: pick[k] for k in PICK_FIELDS if pick.get(k)})
+        rows.remove(pick)
+        folded += 1
+    return folded
+
+
 def ledger_upsert(rows: list[dict], **fields) -> dict:
-    """Update the row for this PR or item, or add one. Empty values never overwrite."""
+    """Update the row for this PR, item or brief, or add one. Empty values never overwrite."""
     pr, item = fields.get("pr"), fields.get("item")
     row = next((r for r in rows if pr and r.get("pr") == pr), None)
     if row is None and item:
         row = next((r for r in rows if r.get("item") == item and not r.get("pr")), None)
+    if row is None and pr:
+        row = pick_for(rows, fields.get("brief"))
+        if row is not None:  # the pick's title, source and estimate are what the ledger ranks on
+            fields = {k: v for k, v in fields.items() if k not in PICK_FIELDS or not row.get(k)}
     if row is None:
         row = {c: "" for c in LEDGER_COLUMNS}
         rows.append(row)
@@ -656,6 +690,7 @@ def ledger_sync(path: Path, since: dt.date | None) -> tuple[int, int]:
             row["source"] = row.get("source") or infer_source(p.get("body", "")) or "unknown"
             if not row.get("reason") and (state == "closed" or p.get("reviewDecision") == "CHANGES_REQUESTED"):
                 row["reason"] = maintainer_reason(repo, p["number"]) or ("closed with no comment from Kye" if state == "closed" else "")
+    updated += fold_by_brief(rows)
     rows.sort(key=lambda r: (r.get("listed", ""), r.get("opened", ""), r.get("pr", "")))
     write_ledger(path, rows)
     return added, updated
