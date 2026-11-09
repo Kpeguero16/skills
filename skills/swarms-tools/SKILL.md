@@ -22,6 +22,7 @@ Run it as `python3 <this folder>/scripts/swarms.py <command>`, or `py -3 ...` on
 | `run --tree T [--log F] -- CMD` | Runs CMD in T with the pinned offline environment, after checking that `swarms` imports from T. `python`, `pytest`, `black` and `ruff` run from the swarms venv. |
 | `prove --base B --head H [--copy F...] [--evidence DIR] -- CMD` | Runs CMD in both trees. It prints `PROOF` and exits 0 only when CMD fails on base and passes on head. |
 | `status [--out F]` | Facts, signals and a verdict hint (wait, nudge, rebase, rework, close) for every open PR, plus PRs merged in the last 24 hours. |
+| `ci N [--repo docs]` | For each failing check on the PR, the failing tests and lint findings that the same job didn't have on the base the PR forked from. Only `RESULT clean` exits 0. `RESULT unknown` means a log named nothing or a job had no base run, so read that job yourself. |
 | `snapshot --dest DIR` | Fresh shallow clones of both repos' default branches. |
 | `scan NAME... --tree T [--docs D]` | Where each identifier appears: swarms, tests, examples, docs. |
 | `unused PATH... --tree T [--docs D]` | Functions, classes, methods, constants and `self.` attributes that nothing reads. |

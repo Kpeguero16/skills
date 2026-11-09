@@ -19,7 +19,7 @@ Read `../full-stop/SKILL.md` and `../full-send/SKILL.md`, next to this skill's f
 6. **Push** to my fork with `git push origin HEAD:refs/heads/<branch>`, without renaming the worktree's branch. Then run `publish init` and fill in the competition terms, as `swarms-publish` describes.
 7. **Ask me** with the harness's question tool. Put the full title and body in the question, with the proof in one line, and offer: approve and post now, approve and post at a time I give, or change something. A question in a normal reply looks like a finished thread and gets missed.
 8. **Publish** after approval. Read `../swarms-publish/SKILL.md` and follow it, starting with `publish approve`.
-9. **Babysit** with `babysit-pr` and `watch_pull_request`. Act only on events newer than the last push. A failing CI job belongs to this PR only if the same job passes on master. Fix real findings with proof before each push. Decline scope growth in a comment written with `leaving-pr-comments`. When the PR conflicts with master, rebase and push with `--force-with-lease`.
+9. **Babysit** with `babysit-pr` and `watch_pull_request`. Act only on events newer than the last push. Run `swarms.py ci <pr>`. A CI failure belongs to this PR only if it lists it. Fix real findings with proof before each push. Decline scope growth in a comment written with `leaving-pr-comments`. When the PR conflicts with master, rebase and push with `--force-with-lease`.
 10. **Stop** with `unwatch_pull_request` and one verdict: ready, waiting (on Kye's review, or on the framework PR for a docs PR), or blocked (what blocks it, what you tried, what's needed).
 
 ## When to ask me

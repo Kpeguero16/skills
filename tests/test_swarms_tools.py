@@ -150,6 +150,41 @@ class Checks(unittest.TestCase):
             self.assertEqual(facts["waits_on"], [{"pr": "kyegomez/swarms#3124", "state": "OPEN"}])
             self.assertFalse(facts["ready"])
 
+    def test_ci_reports_only_failures_the_forked_base_did_not_have(self):
+        stamp = "2026-11-07T13:31:32.6984345Z "
+        base_log = "\n".join([stamp + "\x1b[31mFAILED tests/a.py::test_old - boom\x1b[0m",
+                              stamp + "swarms/p.py:4:8: F401 [*] `uuid` imported but unused"])
+        cases = [  # (PR log, base conclusion, expected exit, expected line)
+            (base_log.replace(":4:8:", ":9:8:"), "failure", 0, "PASS test: 2 failures here, 0 not on master"),
+            (base_log + "\nFAILED tests/b.py::test_new - x", "failure", 1, "  FAILED tests/b.py::test_new"),
+            (base_log, "success", 1, "FAIL test: fails here and passes on master"),
+            ("no test names here", "failure", 1, "WARN test: fails here and on master, and the log names no test"),
+        ]
+        for pr_log, base_conclusion, code, line in cases:
+            def fake(*args, json_out=True, **kwargs):
+                args = tuple(map(str, args))
+                if args[:2] == ("pr", "view"):
+                    return {"headRefOid": "h" * 40, "statusCheckRollup": [
+                        {"name": "test", "status": "COMPLETED", "conclusion": "FAILURE",
+                         "detailsUrl": "https://github.com/kyegomez/swarms/actions/runs/1/job/11"},
+                        {"name": "lint", "status": "COMPLETED", "conclusion": "SUCCESS"}]}
+                if args[-1].endswith(f"/compare/master...{'h' * 40}"):
+                    return {"merge_base_commit": {"sha": "f" * 40}}
+                if args[-1].endswith(f"commits?sha={'f' * 40}&per_page=10"):
+                    return [{"sha": "f" * 40}]
+                if "/check-runs" in args[-1]:
+                    return {"check_runs": [{"id": 22, "name": "test", "status": "completed", "conclusion": base_conclusion}]}
+                if args[-1].endswith("/jobs/11/logs"):
+                    return pr_log
+                if args[-1].endswith("/jobs/22/logs"):
+                    return base_log
+                raise AssertionError(f"unexpected gh call {args}")
+
+            with self.subTest(line=line), mock.patch.object(swarms, "gh", fake):
+                lines, got = swarms.ci_report(swarms.SWARMS, 7)
+                self.assertEqual(got, code, lines)
+                self.assertTrue(any(l.startswith(line) for l in lines), lines)
+
     def test_bots(self):
         self.assertTrue(swarms.is_bot("coderabbitai[bot]"))
         self.assertTrue(swarms.is_bot("github-actions"))
