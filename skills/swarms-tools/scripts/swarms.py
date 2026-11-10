@@ -190,6 +190,34 @@ def size_bucket(lines: int) -> str:
     return SIZE_BUCKETS[-1][1]
 
 
+# Kye, 2026-10-29: "you're changing five lines of code ... and then you're adding, like, 50 lines of tests".
+# 20 non-blank lines: Kye merged tests of 13 and under without comment and flagged 28 and up.
+# At 15 with blank lines counted, agents packed statements onto lines to fit (#3337, #3314).
+TEST_FLOOR = 20
+
+
+def diff_files(text: str) -> list[tuple[str, int]]:
+    """(path, non-blank lines added) for each file in a unified diff."""
+    files: list[tuple[str, int]] = []
+    in_hunk = False
+    for line in text.splitlines():
+        if line.startswith("diff --git "):
+            files.append((line.rsplit(" b/", 1)[-1], 0))
+            in_hunk = False
+        elif line.startswith("@@"):
+            in_hunk = True
+        elif in_hunk and files and line.startswith("+") and line[1:].strip():
+            files[-1] = (files[-1][0], files[-1][1] + 1)
+    return files
+
+
+def budget_for(files: list[tuple[str, int]]) -> tuple[int, int, int]:
+    """(lines added under swarms/, lines added under tests/, the test budget)."""
+    source = sum(n for path, n in files if path.startswith("swarms/"))
+    tests = sum(n for path, n in files if path.startswith("tests/"))
+    return source, tests, max(TEST_FLOOR, source)
+
+
 DISCORD_SPECIAL = re.compile(r"([_*~`|])")
 
 
@@ -1794,6 +1822,24 @@ def cmd_publish(a):
     return publish_post(task, m, a.label_wait)
 
 
+def cmd_test_budget(a):
+    if a.number:
+        diff = gh("pr", "diff", str(a.number), "--repo", SWARMS, json_out=False)
+    elif a.tree:
+        tree = Path(a.tree).resolve()
+        if git(tree, "status", "--porcelain", "--untracked-files=all"):
+            print("WARN uncommitted changes aren't counted; commit first")
+        base = git(tree, "merge-base", a.base, "HEAD")
+        diff = git(tree, "diff", "--no-renames", "--unified=0", base, "HEAD")
+    else:
+        raise SystemExit("FAIL give a PR number or --tree")
+    source, tests, budget = budget_for(diff_files(diff))
+    ok = tests <= budget
+    print(f"{'PASS' if ok else 'FAIL'} tests add {tests} non-blank lines; the budget is {budget}, "
+          f"the larger of {TEST_FLOOR} and the {source} non-blank lines added under swarms/")
+    return 0 if ok else 1
+
+
 def cmd_lint(a):
     total = 0
     for name in a.files:
@@ -1931,6 +1977,12 @@ def build_parser() -> argparse.ArgumentParser:
     for flag in ("--item", "--brief", "--source", "--est"):
         p.add_argument(flag)
     p.set_defaults(func=cmd_publish)
+
+    p = sub.add_parser("test-budget", help="non-blank test lines added, against the larger of 20 and those added under swarms/")
+    p.add_argument("number", type=int, nargs="?", help="a swarms PR; or use --tree for a local branch")
+    p.add_argument("--tree", help="a worktree whose commits since --base to count")
+    p.add_argument("--base", default="upstream/master")
+    p.set_defaults(func=cmd_test_budget)
 
     p = sub.add_parser("lint", help="em dashes, curly quotes, unslop vocabulary; --discord adds the 2,000 limit")
     p.add_argument("files", nargs="+", help="files, or - for stdin")

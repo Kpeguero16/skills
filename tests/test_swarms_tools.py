@@ -74,6 +74,13 @@ class Titles(unittest.TestCase):
         self.assertEqual([swarms.size_bucket(n) for n in (0, 29, 30, 99, 100, 299, 300)],
                          ["under 30", "under 30", "30 to 99", "30 to 99", "100 to 299", "100 to 299", "300 and up"])
 
+    def test_budget_counts_non_blank_lines_in_swarms_and_tests_only(self):
+        diff = ("diff --git a/swarms/a.py b/swarms/a.py\n--- a/swarms/a.py\n+++ b/swarms/a.py\n@@ -1 +1,2 @@\n-y\n+x = 1\n+\n"
+                "diff --git a/tests/t.py b/tests/t.py\n@@ -0,0 +1,3 @@\n+++ counts\n+   \n+assert x\n"
+                "diff --git a/examples/e.py b/examples/e.py\n@@ -0,0 +1 @@\n+print()\n")
+        self.assertEqual(swarms.budget_for(swarms.diff_files(diff)), (1, 2, 20))
+        self.assertEqual(swarms.budget_for([("swarms/a.py", 108), ("tests/t.py", 57)]), (108, 57, 108))
+
 
 class Lint(unittest.TestCase):
     def test_flags_dashes_quotes_and_vocabulary_outside_code(self):
