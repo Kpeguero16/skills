@@ -28,7 +28,8 @@ The swarms `CLAUDE.md` section "Tests: only where they earn their place" says ho
 
 - Add the new assertions to an existing test that already builds the object, when one fits. Write a new test function only when none does.
 - Reuse the stubs and fixtures already in the test file. A new fake model is where most extra lines come from.
-- `test-budget` must print PASS. On FAIL, shorten the test and keep the assertion that goes red on master. If it still fails, say why in the approval question.
+- `test-budget` must print PASS. On FAIL, shorten the test by reusing setup and dropping cases that repeat each other, with one statement per line, and keep the assertion that goes red on master. If it still fails, say why in the approval question.
+- Undo each part of the fix in turn and check that a test fails each time. A case you dropped that nothing else catches goes back in.
 - A longer repro written for your own confidence stays in the verify-swarms run folder and doesn't ship.
 - A sol-loop finding that asks for more cases is like any other finding: it counts only when the case fails on the branch.
 
