@@ -190,6 +190,23 @@ def size_bucket(lines: int) -> str:
     return SIZE_BUCKETS[-1][1]
 
 
+# Kye, 2026-10-29: "you're changing five lines of code ... and then you're adding, like, 50 lines of tests".
+TEST_FLOOR = 15
+
+
+def numstat_files(text: str) -> list[tuple[str, int]]:
+    """(path, lines added) from `git diff --numstat`; binary files count 0."""
+    rows = [line.split("\t", 2) for line in text.splitlines() if line.count("\t") >= 2]
+    return [(path, int(added) if added.isdigit() else 0) for added, _, path in rows]
+
+
+def budget_for(files: list[tuple[str, int]]) -> tuple[int, int, int]:
+    """(lines added under swarms/, lines added under tests/, the test budget)."""
+    source = sum(n for path, n in files if path.startswith("swarms/"))
+    tests = sum(n for path, n in files if path.startswith("tests/"))
+    return source, tests, max(TEST_FLOOR, source)
+
+
 DISCORD_SPECIAL = re.compile(r"([_*~`|])")
 
 
@@ -1794,6 +1811,25 @@ def cmd_publish(a):
     return publish_post(task, m, a.label_wait)
 
 
+def cmd_test_budget(a):
+    if a.number:
+        files = [(f["path"], f["additions"]) for f in gh("pr", "view", str(a.number), "--repo", SWARMS,
+                                                         "--json", "files")["files"]]
+    elif a.tree:
+        tree = Path(a.tree).resolve()
+        if git(tree, "status", "--porcelain", "--untracked-files=all"):
+            print("WARN uncommitted changes aren't counted; commit first")
+        base = git(tree, "merge-base", a.base, "HEAD")
+        files = numstat_files(git(tree, "diff", "--numstat", "--no-renames", base, "HEAD"))
+    else:
+        raise SystemExit("FAIL give a PR number or --tree")
+    source, tests, budget = budget_for(files)
+    ok = tests <= budget
+    print(f"{'PASS' if ok else 'FAIL'} tests add {tests} lines; the budget is {budget}, "
+          f"the larger of {TEST_FLOOR} and the {source} lines added under swarms/")
+    return 0 if ok else 1
+
+
 def cmd_lint(a):
     total = 0
     for name in a.files:
@@ -1931,6 +1967,12 @@ def build_parser() -> argparse.ArgumentParser:
     for flag in ("--item", "--brief", "--source", "--est"):
         p.add_argument(flag)
     p.set_defaults(func=cmd_publish)
+
+    p = sub.add_parser("test-budget", help="new test lines against the larger of 15 and the new lines under swarms/")
+    p.add_argument("number", type=int, nargs="?", help="a swarms PR; or use --tree for a local branch")
+    p.add_argument("--tree", help="a worktree whose commits since --base to count")
+    p.add_argument("--base", default="upstream/master")
+    p.set_defaults(func=cmd_test_budget)
 
     p = sub.add_parser("lint", help="em dashes, curly quotes, unslop vocabulary; --discord adds the 2,000 limit")
     p.add_argument("files", nargs="+", help="files, or - for stdin")

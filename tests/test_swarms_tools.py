@@ -74,6 +74,11 @@ class Titles(unittest.TestCase):
         self.assertEqual([swarms.size_bucket(n) for n in (0, 29, 30, 99, 100, 299, 300)],
                          ["under 30", "under 30", "30 to 99", "30 to 99", "100 to 299", "100 to 299", "300 and up"])
 
+    def test_budget_counts_swarms_and_tests_only(self):
+        files = swarms.numstat_files("12\t1\tswarms/a.py\n34\t0\ttests/t.py\n50\t0\texamples/x.py\n-\t-\tswarms/i.png\n")
+        self.assertEqual(swarms.budget_for(files), (12, 34, 15))
+        self.assertEqual(swarms.budget_for([("swarms/a.py", 108), ("tests/t.py", 57)]), (108, 57, 108))
+
 
 class Lint(unittest.TestCase):
     def test_flags_dashes_quotes_and_vocabulary_outside_code(self):

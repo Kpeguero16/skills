@@ -37,7 +37,8 @@ In both clones, `upstream` is the main repo and `origin` is my fork. On another 
 ### What merges
 
 - Small PRs. Under 100 changed lines usually merge within a few hours, and bigger ones take a day or more. `swarms.py ledger stats` has the current numbers.
-- Framework and API work, deletions, and compact tests.
+- Framework and API work, and deletions.
+- Short tests. Kye flagged long ones on 2026-10-29 and 2026-11-09: agents write big tests, and 50 test lines for a 5-line fix only adds code. A PR's new test lines stay within the larger of 15 and its new lines under `swarms/`, which `swarms.py test-budget` checks.
 - A deletion needs no new test (the swarms `CLAUDE.md` says so). Run the module's tests before and after.
 - "No internal callers" isn't enough to delete public API. Kye kept `Agent.run_batched`, which had docs, a bug-fix history and tests. Lead with what's wrong with the code.
 - A change users can see needs a docs PR in `swarms-framework-docs`, opened with the framework PR and never alone.

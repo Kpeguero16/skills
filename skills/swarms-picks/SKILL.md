@@ -40,7 +40,7 @@ e) **Deletions**, which Kye welcomes. `python3 $T unused <area> --tree <snapshot
 ## 4. Check every candidate
 
 - **Competition:** `python3 $T competition <issue number> <symbol>`, with `--removed '<regex>'` for a deletion. Read why any attempt was closed. A PR existing isn't a reason to drop a candidate, because the smaller PR tends to win: give the competitor's size and whether a smaller PR is realistic. Drop it if a recent small PR already does the job.
-- **Size:** source plus test lines. Deletions get no new tests. A fix or feature gets one compact test covering several cases. Anything over 100 lines is a big PR. Don't drop it for its size. It competes for the Big PRs section in step 5.
+- **Size:** source plus test lines. Deletions get no new tests. A fix or feature gets one compact test covering several cases, within AGENTS.md's test budget. Find the existing test it can extend. Anything over 100 lines is a big PR. Don't drop it for its size. It competes for the Big PRs section in step 5.
 - **Docs:** "none" unless users can see the change. Otherwise name the page. A docs PR only goes with a framework PR.
 
 ## 5. Rank
@@ -110,7 +110,7 @@ Item <N> in <report path>, checked at master <short SHA> on <date and time>. Not
 - Branch: `<fix|feat|refactor|test|docs>/<slug>`
 - Size: about N lines, in <files>
 - Docs: none, or the page
-- New tests: none for a deletion, otherwise one compact test
+- New tests: none for a deletion, otherwise the existing test to extend (file and function), or "new" when none fits
 
 ## What to change
 ## Plan
