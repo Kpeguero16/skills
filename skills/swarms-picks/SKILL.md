@@ -5,7 +5,7 @@ description: Find today's PR opportunities in kyegomez/swarms, rank them by what
 
 # Swarms picks
 
-Find work likely to merge today, rank it, and write one brief per item that a fresh thread can run with "own it, full stop". Don't start the work itself.
+Find work likely to merge today, rank it, pick up to three bigger PRs worth a day or more, and write one brief per item that a fresh thread can run with "own it, full stop". Don't start the work itself.
 
 - Read-only on GitHub: no issues, PRs, comments, claims, labels, reviews or pushes.
 - Run no git in the main clones, and edit nothing there except today's files under `tasks/`.
@@ -31,7 +31,7 @@ a) **Bounties**, which Kye assigns with dollar amounts, often in meetings or on 
 
 b) **Group meetings.** Load `mcp__claude_ai_Wispr_Flow__search_meetings` and `mcp__claude_ai_Wispr_Flow__get_meeting` with ToolSearch. Search "swarm" with `since` 72 hours ago, and use only meetings whose title contains "swarm". Read each summary, and the transcript where a feature, an assignment or a bounty comes up. Pull out what Kye asked for that nobody has picked up, and guidance that changes priorities. Report a meeting from an earlier report only if something in it is still open.
 
-c) **Issues.** `gh issue list --repo kyegomez/swarms --state open --limit 300 --json number,title,labels,assignees,author,createdAt,comments`. Skip assigned issues and routehub work. Prefer Kye's issues, then the newest framework and API bugs and tech debt. Triage on titles, read about 15 in full, and confirm each still applies by reading master in the snapshot.
+c) **Issues.** `gh issue list --repo kyegomez/swarms --state open --limit 300 --json number,title,labels,assignees,author,createdAt,comments`. Skip assigned issues and routehub work. Prefer Kye's issues, then the newest framework and API bugs and tech debt. Feature requests and refactors too big for 100 lines are candidates for the Big PRs section. Triage on titles, read about 15 in full, and confirm each still applies by reading master in the snapshot.
 
 d) **Bugs found by reading.** Pick one or two framework modules not listed under "Scanned" in the last 7 reports. A candidate needs a file:line and an input that gives a wrong result.
 
@@ -40,17 +40,19 @@ e) **Deletions**, which Kye welcomes. `python3 $T unused <area> --tree <snapshot
 ## 4. Check every candidate
 
 - **Competition:** `python3 $T competition <issue number> <symbol>`, with `--removed '<regex>'` for a deletion. Read why any attempt was closed. A PR existing isn't a reason to drop a candidate, because the smaller PR tends to win: give the competitor's size and whether a smaller PR is realistic. Drop it if a recent small PR already does the job.
-- **Size:** source plus test lines. Deletions get no new tests. A fix or feature gets one compact test covering several cases. Mark anything over 100 lines as over the limit, and keep it only if it's a named bounty or Kye asked for it.
+- **Size:** source plus test lines. Deletions get no new tests. A fix or feature gets one compact test covering several cases. Anything over 100 lines is a big PR. Don't drop it for its size. It competes for the Big PRs section in step 5.
 - **Docs:** "none" unless users can see the change. Otherwise name the page. A docs PR only goes with a framework PR.
 
 ## 5. Rank
 
-Up to 10. Named bounties and Kye's direct requests first. Then rank by the ledger: the types, sizes and sources that merged fastest over the last 30 days go higher, and the ones that stall go lower. Say in one line what the ledger showed. Aim for at least 3 deletions when the evidence supports it. Mark a repeat with the date it was first listed.
+**Shortlist:** up to 10 items of 100 lines or less. Named bounties and Kye's direct requests first. Then rank by the ledger: the types, sizes and sources that merged fastest over the last 30 days go higher, and the ones that stall go lower. Say in one line what the ledger showed. Aim for at least 3 deletions when the evidence supports it. Mark a repeat with the date it was first listed.
+
+**Big PRs:** up to 3 items over 100 lines. Pick the ones most likely to merge: bounties and Kye's requests first, then open issues with clear acceptance criteria, framework and API work, and nothing a recent PR already covers. Say how each could split into PRs under 100 lines, or why it can't. Write "None found" with the reason rather than padding the section with weak items.
 
 ## 6. Write
 
 1. The report, to `<tasks>/daily-opportunities/<date>.md`.
-2. One brief per shortlisted item, to `<tasks>/handoffs/<date>/<N>-<slug>.md`.
+2. One brief per item in the Shortlist and Big PRs sections, to `<tasks>/handoffs/<date>/<N>-<slug>.md`.
 3. One ledger row per item: `python3 $T ledger add --item "<title>" --source "<source>" --est <lines> --brief <brief path>`. The source is one of `issue #N`, `meeting YYYY-MM-DD`, `bounty`, `kye request`, `bug found by reading` or `deletion`.
 4. Remove the snapshot folder.
 5. Give the report as your final message.
@@ -72,6 +74,13 @@ One line each with a link and the action, from the status report, or "None".
 - Competition: none, or #N by <author> (+x/-y) and whether a smaller PR is realistic
 - Docs: none, or the page
 - Brief: <brief path>
+
+## Big PRs
+Numbered on from the shortlist, in the same format, plus:
+- Why it's worth the wait: <the bounty, Kye's request, or what users get>
+- Split: <how it splits into PRs under 100 lines, or why it can't>
+
+Or "None found" and why.
 
 ## Guidance from meetings
 Only what changes priorities, or "None".
@@ -104,6 +113,8 @@ Item <N> in <report path>, checked at master <short SHA> on <date and time>. Not
 - New tests: none for a deletion, otherwise one compact test
 
 ## What to change
+## Plan
+Big PRs only: the steps in order, and where the work splits into separate PRs. The size above tells `swarms-own` the brief planned for more than 100 lines.
 ## Evidence
 ## History
 Closed attempts, Kye's past objections, and competing PRs with their sizes. "None" when there are none.
