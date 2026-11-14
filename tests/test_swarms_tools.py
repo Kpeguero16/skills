@@ -199,6 +199,16 @@ class Checks(unittest.TestCase):
 
 
 class Ledger(unittest.TestCase):
+    def test_add_refuses_a_dropped_item(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"SWARMS_TASKS": tmp}):
+            self.assertIsNone(swarms.dropped_note("handoffs/2026-11-14/5-some-item.md"))
+            (Path(tmp) / "some-item").mkdir()
+            (Path(tmp) / "some-item" / "DROPPED.md").write_text("why", encoding="utf-8")
+            with self.assertRaises(SystemExit) as stop:
+                swarms.main(["ledger", "add", "--item", "x", "--brief", "handoffs/2026-11-14/5-some-item.md"])
+            self.assertIn("DROPPED.md", str(stop.exception))
+            self.assertFalse((Path(tmp) / "daily-opportunities").exists())
+
     def test_round_trip_upsert_and_stats(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "outcomes.tsv"
@@ -492,14 +502,16 @@ class Scans(unittest.TestCase):
                 "def used():\n    return LIMIT\n\n"
                 "def dead():\n    return 1\n\n"
                 "class Box:\n    def __init__(self):\n        self.kept = 1\n        self.write_only = 2\n\n"
-                "    def size(self):\n        return self.kept\n",
+                "    def size(self):\n        return self.kept\n\n"
+                "class Traced:\n    def __init__(self, cap=1):\n        self.cap = cap\n        capture_init(self)\n",
                 encoding="utf-8")
-            (tree / "tests" / "test_mod.py").write_text("from swarms.mod import used, Box\nused()\nBox().size()\n",
+            (tree / "tests" / "test_mod.py").write_text("from swarms.mod import used, Box, Traced\nused()\nBox().size()\nTraced()\n",
                                                         encoding="utf-8")
             found = {d["name"] for d in swarms.find_unused([tree / "swarms"], tree, None)}
             self.assertEqual(found, {"UNUSED_LIMIT", "dead", "write_only"})
             hits = swarms.scan_names(["used"], tree, None)["used"]
             self.assertEqual(hits["areas"], {"swarms": 1, "tests": 2})
+            self.assertEqual(swarms.telemetry_readers(["cap", "kept"], tree), ["self.cap in Traced (swarms/mod.py:18)"])
 
 
 class Environment(unittest.TestCase):

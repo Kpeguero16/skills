@@ -66,6 +66,14 @@ def tasks_dir() -> Path:
     return Path(os.environ.get("SWARMS_TASKS") or swarms_clone() / "tasks").expanduser()
 
 
+def dropped_note(brief: str | None) -> Path | None:
+    """The DROPPED.md an owner thread left in the task folder of this brief's item, if there is one."""
+    if not brief:
+        return None
+    note = tasks_dir() / re.sub(r"^\d+-", "", Path(brief).stem) / "DROPPED.md"
+    return note if note.is_file() else None
+
+
 def ledger_path() -> Path:
     return tasks_dir() / "daily-opportunities" / "outcomes.tsv"
 
@@ -807,6 +815,31 @@ def scan_names(names: list[str], tree: Path, docs: Path | None, max_hits: int = 
     for entry in result.values():
         entry["areas"] = dict(entry["areas"])
     return result
+
+
+def telemetry_readers(names: list[str], tree: Path) -> list[str]:
+    """Classes that call capture_init and take one of the names as an __init__ parameter.
+
+    capture_init reads every constructor parameter off self with getattr, which a text search can't see.
+    """
+    found = []
+    for path in sorted((tree / "swarms").rglob("*.py")):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if "capture_init" not in text:
+            continue
+        try:
+            module = ast.parse(text)
+        except SyntaxError:
+            continue
+        for cls in (n for n in ast.walk(module) if isinstance(n, ast.ClassDef)):
+            calls = {getattr(n.func, "id", getattr(n.func, "attr", "")) for n in ast.walk(cls) if isinstance(n, ast.Call)}
+            init = next((n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "__init__"), None)
+            if "capture_init" not in calls or init is None:
+                continue
+            params = {arg.arg for arg in init.args.args + init.args.kwonlyargs}
+            found += [f"self.{name} in {cls.name} ({path.relative_to(tree).as_posix()}:{cls.lineno})"
+                      for name in names if name in params]
+    return found
 
 
 def token_counts(tree: Path, docs: Path | None) -> collections.Counter:
@@ -1655,6 +1688,10 @@ def cmd_ledger(a):
         added, updated = ledger_sync(path, dt.date.fromisoformat(a.since) if a.since else None)
         print(f"{path}: {added} rows added, {updated} updated")
     elif a.action == "add":
+        note = dropped_note(a.brief)
+        if note and not a.pr:
+            raise SystemExit(f"FAIL this item was dropped before, for the reason in {note}. "
+                             "Take it out of the report and delete its brief, unless that reason is gone.")
         rows = read_ledger(path)
         row = ledger_upsert(rows, listed=a.listed or dt.date.today().isoformat(), item=a.item, source=a.source,
                             type=a.type or pr_type(a.item or ""), est_lines=a.est, pr=a.pr, brief=a.brief,
@@ -1672,6 +1709,9 @@ def cmd_scan(a):
         print(f"{name}: {entry['total']} ({areas})")
         for hit in entry["hits"]:
             print(f"  {hit}")
+    for reader in telemetry_readers(a.names, tree):
+        print(f"WARN telemetry reads {reader}: capture_init reports every constructor parameter, "
+              "so removing the attribute changes swarms.config")
 
 
 def cmd_unused(a):
