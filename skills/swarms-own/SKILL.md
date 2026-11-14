@@ -44,6 +44,8 @@ Only when:
 
 Decide everything else and list the decisions in the report.
 
+When an item is dropped, write the reason and the evidence to `tasks/<slug>/DROPPED.md`, so `swarms-picks` doesn't list it again.
+
 ## Report
 
 The PR link, the verdict, the proof in one line, the sol-loop rounds and what they changed, and anything unproven. End with the Discord lines from the publish output.

@@ -23,7 +23,7 @@ Find work likely to merge today, rank it, pick up to three bigger PRs worth a da
 
 ## 2. What's in flight
 
-Leave out anything these cover: my open PRs (in the status report, or `gh pr list --repo kyegomez/swarms --author Kpeguero16 --state open`), branches on my fork (`gh api --paginate repos/Kpeguero16/swarms/branches --jq '.[].name'`), and the folder names in `<tasks>/`. Ledger rows listed in the last 7 days with no PR are items I passed on. List one again only if it's still among the best.
+Leave out anything these cover: my open PRs (in the status report, or `gh pr list --repo kyegomez/swarms --author Kpeguero16 --state open`), branches on my fork (`gh api --paginate repos/Kpeguero16/swarms/branches --jq '.[].name'`), and the folder names in `<tasks>/`. Ledger rows listed in the last 7 days with no PR are items I passed on. List one again only if it's still among the best. A folder in `<tasks>/` with a `DROPPED.md` is an item an owner thread dropped, with the reason. Don't list it again unless that reason is gone, and `ledger add` fails if you do.
 
 ## 3. Sources
 
