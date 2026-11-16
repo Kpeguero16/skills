@@ -28,6 +28,8 @@ Run it as `python3 <this folder>/scripts/swarms.py <command>`, or `py -3 ...` on
 | `snapshot --dest DIR` | Fresh shallow clones of both repos' default branches. |
 | `scan NAME... --tree T [--docs D]` | Where each identifier appears: swarms, tests, examples, docs. |
 | `unused PATH... --tree T [--docs D]` | Functions, classes, methods, constants and `self.` attributes that nothing reads. |
+| `leads PATH... --tree T [--select RULES] [--limit N]` | What ruff finds with rules the swarms lint job doesn't run: a parameter a method never reads, a dropped exception, a mutable default argument and a loop closure. It uses ruff from the swarms venv, from PATH or through `uvx`. |
+| `merged [--days N] [--repo docs] [--type T...]` | Every PR merged in the last N days, anyone's, with the files it touched outside tests and examples. |
 | `competition TERM... [--removed REGEX] [--allow N...]` | PRs that mention the terms, and whether each removes the same lines. |
 | `ledger sync`, `ledger add`, `ledger stats` | The outcomes ledger at `tasks/daily-opportunities/outcomes.tsv`. `add` fails for an item whose task folder holds a `DROPPED.md`. |
 | `publish init`, `approve`, `check`, `post` | The publish flow. See the `swarms-publish` skill. |
@@ -51,6 +53,7 @@ The defaults are the Mac layout. Set these to override them, for example on the 
 ## Limits
 
 - `unused` and `scan` count names in text. getattr, string dispatch and framework hooks are invisible to them, so a hit is a lead to read, not proof.
+- `leads` reports what a rule matches, not what's wrong. A parameter an interface requires and a `pass` that's meant are both in its list.
 - `scan` knows one such reader. `capture_init` reports every constructor parameter by reading it off `self`, so `scan` prints a `WARN telemetry reads` line for a name that is a parameter of a class calling it. That attribute isn't unused.
 - `style` reads only what a diff adds, so it never asks for old code to be fixed. It can't judge a comment that narrates the code, a vague name or tight spacing. Those still need a read.
 - `status` hints are mechanical. The `swarms-status` skill reads the evidence and decides the verdict.

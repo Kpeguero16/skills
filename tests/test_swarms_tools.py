@@ -575,6 +575,25 @@ class Scans(unittest.TestCase):
             self.assertEqual(hits["areas"], {"swarms": 1, "tests": 2})
             self.assertEqual(swarms.telemetry_readers(["cap", "kept"], tree), ["self.cap in Traced (swarms/mod.py:18)"])
 
+    def test_leads_group_ruff_hits_by_rule_with_tree_paths_in_line_order(self):
+        tree = Path(tempfile.gettempdir()).resolve() / "tree"
+        hits = [("B006", "b.py", 20), ("B006", "b.py", 3), ("S110", "a.py", 7)]
+        raw = json.dumps([{"code": code, "filename": str(tree / "swarms" / name), "location": {"row": row}, "message": "m"}
+                          for code, name, row in hits])
+        self.assertEqual(swarms.parse_leads(raw, tree),
+                         {"B006": ["swarms/b.py:3 m", "swarms/b.py:20 m"], "S110": ["swarms/a.py:7 m"]})
+
+    def test_merged_filters_by_type_and_leaves_tests_out_of_the_files(self):
+        import contextlib
+        import io
+        prs = [{"number": 1, "title": "[DOCS][a][Say it]", "author": {"login": "y"}, "mergedAt": "2026-11-13T12:00:00Z", "files": []},
+               {"number": 2, "title": "[FIX][A.run][Fix it]", "author": {"login": "x"}, "mergedAt": "2026-11-14T12:00:00Z",
+                "files": [{"path": "swarms/a.py"}, {"path": "tests/test_a.py"}]}]
+        out = io.StringIO()
+        with mock.patch.object(swarms, "gh", lambda *args, **kwargs: prs), contextlib.redirect_stdout(out):
+            swarms.main(["merged", "--type", "fix"])
+        self.assertEqual(out.getvalue().splitlines()[1:], ["#2 2026-11-14 x [FIX][A.run][Fix it]", "  swarms/a.py"])
+
 
 class Environment(unittest.TestCase):
     def test_pinned_env_blanks_keys_and_pins_the_tree(self):
