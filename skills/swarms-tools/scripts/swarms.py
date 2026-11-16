@@ -1744,19 +1744,35 @@ def cmd_competition(a):
               f"updated {r['updatedAt'][:10]}) {r['title'][:80]}{tail} <{r['url']}>")
 
 
+def _unlock_and_retry(func, path, _exc):
+    os.chmod(path, 0o700)
+    func(path)
+
+
+def remove_clone(path: Path) -> None:
+    """Delete a folder that holds git clones. Windows won't delete git's read-only pack files until
+    they're writable, and reaches a path past 260 characters only through the \\\\?\\ prefix."""
+    target = str(path)
+    if os.name == "nt" and not target.startswith("\\\\"):
+        target = "\\\\?\\" + target
+    hook = "onexc" if sys.version_info >= (3, 12) else "onerror"
+    shutil.rmtree(target, **{hook: _unlock_and_retry})
+
+
 def cmd_snapshot(a):
     dest = Path(a.dest).resolve()
     marker = dest / ".swarms-snapshot"
     if dest.exists():
         if not marker.exists():
             raise SystemExit(f"FAIL {dest} exists and isn't a snapshot; pick another --dest")
-        shutil.rmtree(dest)
+        remove_clone(dest)
     dest.mkdir(parents=True)
     marker.write_text(local(now_utc()), encoding="utf-8")
     for repo in REPO_LABEL:
         target = dest / SHORT[repo]
-        p = subprocess.run(["git", "clone", "--quiet", "--depth", "1", f"https://github.com/{repo}.git", str(target)],
-                           capture_output=True, text=True)
+        # swarms has example paths near 180 characters, past Windows' 260 limit under a deep --dest.
+        p = subprocess.run(["git", "clone", "--quiet", "--depth", "1", "-c", "core.longpaths=true",
+                            f"https://github.com/{repo}.git", str(target)], capture_output=True, text=True)
         if p.returncode != 0:
             raise SystemExit(f"FAIL clone {repo}: {p.stderr.strip()}")
         print(f"{repo} {git(target, 'rev-parse', '--short', 'HEAD')} {target}")
