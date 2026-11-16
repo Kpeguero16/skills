@@ -731,6 +731,21 @@ class Transcripts(unittest.TestCase):
             self.assertEqual(len(json.loads(out.read_text(encoding="utf-8"))), 30)
 
 
+class FuzzTemplate(unittest.TestCase):
+    def test_passes_as_shipped_and_reports_a_broken_promise_with_exit_1(self):
+        import contextlib
+        import io
+        spec = importlib.util.spec_from_file_location("fuzz_template", ROOT / "skills/swarms-picks/scripts/fuzz_template.py")
+        fuzz = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fuzz)
+        out = io.StringIO()
+        with mock.patch.object(sys, "argv", ["fuzz", "1", "0.05"]), contextlib.redirect_stdout(out):
+            self.assertEqual(fuzz.main(), 0)
+            with mock.patch.object(fuzz, "broken", lambda value: "wrong" if value else None):
+                self.assertEqual(fuzz.main(), 1)
+        self.assertIn("FOUND [object] broke", out.getvalue())
+
+
 class Cli(unittest.TestCase):
     def test_today_runs(self):
         self.assertEqual(swarms.main(["today", "--date", "2026-11-04"]), 0)
