@@ -28,7 +28,7 @@ Run it as `python3 <this folder>/scripts/swarms.py <command>`, or `py -3 ...` on
 | `scan NAME... --tree T [--docs D]` | Where each identifier appears: swarms, tests, examples, docs. |
 | `unused PATH... --tree T [--docs D]` | Functions, classes, methods, constants and `self.` attributes that nothing reads. |
 | `competition TERM... [--removed REGEX] [--allow N...]` | PRs that mention the terms, and whether each removes the same lines. |
-| `ledger sync`, `ledger add`, `ledger stats` | The outcomes ledger at `tasks/daily-opportunities/outcomes.tsv`. `add` fails for an item whose task folder holds a `DROPPED.md`. |
+| `ledger sync`, `ledger add`, `ledger stats` | The outcomes ledger at `tasks/daily-opportunities/outcomes.tsv`. `add` fails for an item whose task folder holds a `DROPPED.md`. `sync` fills the `later` column for a merged PR that Kye reverted, or whose added lines someone else's fix removed within 14 days, and `stats` counts them. |
 | `publish init`, `approve`, `check`, `post` | The publish flow. See the `swarms-publish` skill. |
 | `lint FILE... [--discord]` | Em dashes, curly quotes and unslop's rule 7 words. `--discord` adds the 2,000-character limit. |
 | `transcripts [--days 7] [--match swarms] [--json F] [--add F...]` | Claude and Codex sessions from the last N days, the ones with the most errors first. `--json` saves them for another machine (`-` prints them), and `--add` reads what another machine saved, so one retro covers both. |
@@ -53,6 +53,7 @@ The defaults are the Mac layout. Set these to override them, for example on the 
 - `scan` knows one such reader. `capture_init` reports every constructor parameter by reading it off `self`, so `scan` prints a `WARN telemetry reads` line for a name that is a parameter of a class calling it. That attribute isn't unused.
 - `status` hints are mechanical. The `swarms-status` skill reads the evidence and decides the verdict.
 - In the main clones, only `checkout` and `cleanup` run git, and only `fetch` and `worktree`. Nothing here checks out, stashes or switches a branch there.
+- The ledger's `later` column compares lines of text. A fix that removes one of my lines for its own reasons shows up there too, so read both PRs before calling it a miss.
 
 ## Changing it
 
