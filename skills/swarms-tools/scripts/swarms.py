@@ -1896,12 +1896,12 @@ def cmd_lint(a):
 def cmd_transcripts(a):
     rows = transcripts(a.days, a.match, a.add or [])
     if a.json:
-        data = transcripts_json(rows[: a.limit])
+        data = transcripts_json(rows)  # every session: --limit only trims the printed list
         if a.json == "-":
             print(data)
         else:
             Path(a.json).write_text(data, encoding="utf-8")
-            print(f"wrote {min(len(rows), a.limit)} sessions to {a.json}")
+            print(f"wrote {len(rows)} sessions to {a.json}")
         return
     machines = sorted({s["machine"] for s in rows})
     print(f"# {len(rows)} sessions in the last {a.days} days whose project matches '{a.match}', "

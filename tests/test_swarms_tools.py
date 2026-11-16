@@ -640,6 +640,15 @@ class Transcripts(unittest.TestCase):
         self.assertEqual(rows[0]["first"], "fix it, OPENAI_API_KEY=***")
         self.assertEqual(again[0]["first"], "fix it, OPENAI_API_KEY=***")
 
+    def test_json_saves_every_session(self):
+        pc = [{"harness": "codex", "path": f"{i}.jsonl", "tools": {}, "errors": {}, "first": "", "start": "",
+               "minutes": 1, "tool_calls": 0, "error_count": 0, "machine": "pc"} for i in range(30)]
+        with tempfile.TemporaryDirectory() as tmp, mock.patch("pathlib.Path.home", return_value=Path(tmp) / "empty-home"):
+            saved, out = Path(tmp) / "pc.json", Path(tmp) / "out.json"
+            saved.write_text(json.dumps(pc), encoding="utf-8")
+            swarms.main(["transcripts", "--add", str(saved), "--json", str(out)])
+            self.assertEqual(len(json.loads(out.read_text(encoding="utf-8"))), 30)
+
 
 class Cli(unittest.TestCase):
     def test_today_runs(self):
