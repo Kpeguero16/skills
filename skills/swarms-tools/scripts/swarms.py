@@ -1569,7 +1569,9 @@ def cmd_cleanup(a):
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 LOG_STAMP = re.compile(r"^\S*\d{4}-\d\d-\d\dT[\d:.]+Z ")
+MERGE_LINE = re.compile(r"Merge [0-9a-f]{40} into ([0-9a-f]{40})")
 FAILURE_LINES = [
+    (re.compile(r"^\./\S+\.pyi?:\d+:\d+: (?!E9|F63|F7|F82)[A-Z]+\d+ "), lambda m: None),  # flake8 --exit-zero warnings
     (re.compile(r"^(?:FAILED|ERROR) (\S+)"), lambda m: m.group(0).split(" - ")[0]),  # pytest
     (re.compile(r"^(\S+\.pyi?):\d+:\d+: ([A-Z]+\d+) (.*)"), lambda m: f"{m[1]}: {m[2]} {m[3]}"),  # ruff, no line numbers
     (re.compile(r"^would reformat (\S+)"), lambda m: m.group(0)),  # black
@@ -1585,7 +1587,7 @@ def log_failures(log: str) -> set[str]:
         for pattern, key in FAILURE_LINES:
             m = pattern.match(line)
             if m:
-                found.add(key(m))
+                found.update(filter(None, [key(m)]))
                 break
     return found
 
@@ -1607,16 +1609,17 @@ def base_jobs(repo: str, sha: str) -> dict[str, dict]:
 
 
 def ci_report(repo: str, number: int) -> tuple[list[str], int]:
-    """Each failing check on the PR, and its failures that the same job didn't have on the base it forked from."""
+    """Each failing check on the PR, and its failures that the same job didn't have on the base the run tested against."""
     base = DEFAULT_BRANCH.get(repo, "main")
     pr = gh("pr", "view", str(number), "--repo", repo, "--json", "statusCheckRollup,headRefOid")
-    jobs, lines, new, unknown = None, [], False, False
+    lines, bases, fork, new, unknown, pending = [], {}, None, False, False, False
     for check in pr.get("statusCheckRollup") or []:
         name = check.get("name") or check.get("context", "")
         if name in NOISE_CHECKS.get(repo, set()):
             continue
         if (check.get("status") or "").upper() != "COMPLETED" and "context" not in check:
             lines.append(f"INFO {name}: still running")
+            pending = True
             continue
         if (check.get("conclusion") or check.get("state") or "").upper() in ("SUCCESS", "NEUTRAL", "SKIPPED"):
             continue
@@ -1625,10 +1628,14 @@ def ci_report(repo: str, number: int) -> tuple[list[str], int]:
             lines.append(f"WARN {name}: failed, and it isn't a GitHub Actions job, so there is no log to compare")
             unknown = True
             continue
-        if jobs is None:  # the base as the PR forked from it, so later fixes on it don't count against the PR
+        log = job_log(repo, m.group(1))
+        tested = MERGE_LINE.search(log)  # a pull_request run tests the PR merged into the base as it was then
+        if not tested and fork is None:
             fork = gh("api", f"repos/{repo}/compare/{base}...{pr['headRefOid']}")["merge_base_commit"]["sha"]
-            jobs = base_jobs(repo, fork)
-        on_base = jobs.get(name)
+        sha = tested[1] if tested else fork
+        if sha not in bases:
+            bases[sha] = base_jobs(repo, sha)
+        on_base = bases[sha].get(name)
         if on_base is None:
             lines.append(f"WARN {name}: failed, and it hasn't run on {base} lately")
             unknown = True
@@ -1637,7 +1644,7 @@ def ci_report(repo: str, number: int) -> tuple[list[str], int]:
             lines.append(f"FAIL {name}: fails here and passes on {base}")
             new = True
             continue
-        here, there = log_failures(job_log(repo, m.group(1))), log_failures(job_log(repo, on_base["id"]))
+        here, there = log_failures(log), log_failures(job_log(repo, on_base["id"]))
         if not here:
             lines.append(f"WARN {name}: fails here and on {base}, and the log names no test or lint finding")
             unknown = True
@@ -1646,9 +1653,9 @@ def ci_report(repo: str, number: int) -> tuple[list[str], int]:
         lines.append(f"{'FAIL' if only else 'PASS'} {name}: {len(here)} failures here, {len(only)} not on {base}")
         lines += [f"  {f}" for f in only]
         new = new or bool(only)
-    verdict = "new failures" if new else "unknown" if unknown else "clean"
+    verdict = "new failures" if new else "pending" if pending else "unknown" if unknown else "clean"
     lines.append(f"RESULT {verdict}")
-    return lines, 1 if new or unknown else 0
+    return lines, 0 if verdict == "clean" else 1
 
 
 def cmd_ci(a):
