@@ -161,30 +161,38 @@ class Checks(unittest.TestCase):
         stamp = "2026-11-07T13:31:32.6984345Z "
         base_log = "\n".join([stamp + "\x1b[31mFAILED tests/a.py::test_old - boom\x1b[0m",
                               stamp + "swarms/p.py:4:8: F401 [*] `uuid` imported but unused"])
-        cases = [  # (PR log, base conclusion, expected exit, expected line)
-            (base_log.replace(":4:8:", ":9:8:"), "failure", 0, "PASS test: 2 failures here, 0 not on master"),
-            (base_log + "\nFAILED tests/b.py::test_new - x", "failure", 1, "  FAILED tests/b.py::test_new"),
-            (base_log, "success", 1, "FAIL test: fails here and passes on master"),
-            ("no test names here", "failure", 1, "WARN test: fails here and on master, and the log names no test"),
+        newer = f"HEAD is now at 3a5968f Merge {'c' * 40} into {'e' * 40}\nFAILED tests/c.py::test_newer - x\n"
+        cases = [  # (PR log, base conclusion, expected exit, expected line, a check still running)
+            (base_log.replace(":4:8:", ":9:8:"), "failure", 0, "PASS test: 2 failures here, 0 not on master", False),
+            (base_log + "\nFAILED tests/b.py::test_new - x", "failure", 1, "  FAILED tests/b.py::test_new", False),
+            (base_log, "success", 1, "FAIL test: fails here and passes on master", False),
+            ("no test names here", "failure", 1, "WARN test: fails here and on master, and the log names no test", False),
+            (base_log, "failure", 1, "RESULT pending", True),
+            (base_log + "\n./swarms/a.py:3:1: C901 'f' is too complex (12)", "failure", 0, "RESULT clean", False),
+            (newer + base_log, "failure", 0, "PASS test: 3 failures here, 0 not on master", False),
         ]
-        for pr_log, base_conclusion, code, line in cases:
+        for pr_log, base_conclusion, code, line, running in cases:
             def fake(*args, json_out=True, **kwargs):
                 args = tuple(map(str, args))
                 if args[:2] == ("pr", "view"):
                     return {"headRefOid": "h" * 40, "statusCheckRollup": [
                         {"name": "test", "status": "COMPLETED", "conclusion": "FAILURE",
                          "detailsUrl": "https://github.com/kyegomez/swarms/actions/runs/1/job/11"},
-                        {"name": "lint", "status": "COMPLETED", "conclusion": "SUCCESS"}]}
+                        {"name": "lint", "status": "COMPLETED", "conclusion": "SUCCESS"}]
+                        + [{"name": "build", "status": "IN_PROGRESS"}] * running}
                 if args[-1].endswith(f"/compare/master...{'h' * 40}"):
                     return {"merge_base_commit": {"sha": "f" * 40}}
-                if args[-1].endswith(f"commits?sha={'f' * 40}&per_page=10"):
-                    return [{"sha": "f" * 40}]
-                if "/check-runs" in args[-1]:
-                    return {"check_runs": [{"id": 22, "name": "test", "status": "completed", "conclusion": base_conclusion}]}
+                for sha, job in (("f" * 40, 22), ("e" * 40, 33)):
+                    if args[-1].endswith(f"commits?sha={sha}&per_page=10"):
+                        return [{"sha": sha}]
+                    if args[-1].endswith(f"commits/{sha}/check-runs?per_page=100"):
+                        return {"check_runs": [{"id": job, "name": "test", "status": "completed", "conclusion": base_conclusion}]}
                 if args[-1].endswith("/jobs/11/logs"):
                     return pr_log
                 if args[-1].endswith("/jobs/22/logs"):
                     return base_log
+                if args[-1].endswith("/jobs/33/logs"):
+                    return base_log + "\nFAILED tests/c.py::test_newer - x"
                 raise AssertionError(f"unexpected gh call {args}")
 
             with self.subTest(line=line), mock.patch.object(swarms, "gh", fake):
