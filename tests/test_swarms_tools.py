@@ -273,6 +273,49 @@ class Ledger(unittest.TestCase):
             self.assertEqual((got[0]["pr"], got[0]["item"], got[0]["source"], got[0]["est_lines"]),
                              ("kyegomez/swarms#9", "[TEST][t][Delete the dead test]", "deletion", "55"))
 
+    def test_later_marks_a_revert_and_someone_elses_fix_that_removes_my_lines(self):
+        def pr(n, title, day, author="someone", files=("swarms/a.py",), body=""):
+            return {"number": n, "title": title, "body": body, "author": {"login": author},
+                    "mergedAt": f"2026-11-{day:02d}T12:00:00Z", "files": [{"path": f} for f in files]}
+
+        def diff(sign, n, path="swarms/a.py"):
+            return f"--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n{sign}    value_{n} = compute_the_thing({n})\n"
+
+        mine = [pr(n, "[PERF][a][Do it]", 1, swarms.USER, ("swarms/a.py", "tests/test_a.py")) for n in (1, 2, 3, 4, 5)]
+        merged = mine + [
+            pr(10, 'Revert "[PERF][a][Do it]"', 2, "kyegomez", body="Reverts kyegomez/swarms#1"),
+            pr(11, "[FIX][a][Fix it]", 3),                              # removes the line #2 added
+            pr(12, "[FIX][a][Fix it]", 3, swarms.USER),                 # my own follow-up to #3
+            pr(13, "[FIX][a][Fix it]", 20),                             # removes #4's line, 19 days later
+            pr(14, "[FIX][a][Fix it]", 3, files=("tests/test_a.py",)),  # removes #5's line in a test
+        ]
+        diffs = {n: diff("+", n) for n in (1, 2, 3, 4, 5)}
+        diffs.update({11: diff("-", 2), 12: diff("-", 3), 13: diff("-", 4), 14: diff("-", 5, "tests/test_a.py")})
+        asked = []
+        later = swarms.undone_later(mine, merged, lambda numbers: asked.extend(numbers) or diffs)
+        self.assertEqual(later, {1: "reverted by #10", 2: "changed by fix #11"})
+        self.assertEqual(asked, [2, 3, 4, 5, 11])  # no diff is read for a pair the dates and files rule out
+        rows = [{"pr": "kyegomez/swarms#2", "item": "x", "state": "merged", "later": later[2]},
+                {"pr": "kyegomez/swarms#6", "item": "y", "state": "merged"}]
+        self.assertIn("1 of 2 merged.\n- kyegomez/swarms#2 x: changed by fix #11",
+                      swarms.ledger_stats(rows, None, swarms.SWARMS))
+
+    def test_sync_marks_a_revert_of_a_pr_that_merged_months_ago(self):
+        old = {"number": 7, "title": "[FIX][a][Fix it]", "state": "MERGED", "createdAt": "2026-08-01T10:00:00Z",
+               "mergedAt": "2026-08-01T12:00:00Z", "additions": 1, "deletions": 1, "reviewDecision": "", "body": ""}
+        revert = {"number": 9, "title": 'Revert "[FIX][a][Fix it]"', "body": "Reverts kyegomez/swarms#7",
+                  "author": {"login": "kyegomez"}, "mergedAt": "2026-11-15T12:00:00Z", "files": []}
+
+        def fake(*args, **kwargs):
+            found = [old] if "--author" in args else [revert]
+            return found if swarms.SWARMS in args else []
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(swarms, "gh", fake):
+            path = Path(tmp) / "outcomes.tsv"
+            swarms.write_ledger(path, [{"listed": "2026-08-01", "item": old["title"], "pr": "kyegomez/swarms#7"}])
+            swarms.ledger_sync(path, None)
+            self.assertEqual(swarms.read_ledger(path)[0]["later"], "reverted by #9")
+
     def test_infer_source(self):
         self.assertEqual(swarms.infer_source("Closes #3157.\n\nDeletes it."), "issue #3157")
         self.assertEqual(swarms.infer_source("No issue."), "")

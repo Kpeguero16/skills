@@ -376,18 +376,23 @@ def is_bot(login: str) -> bool:
     return login.endswith("[bot]") or login.removesuffix("[bot]") in BOTS
 
 
-def removed_lines_by_file(diff: str) -> dict[str, list[str]]:
-    """Lines a unified diff removes, per old path. Short lines like ')' are skipped."""
+def changed_lines(diff: str, sign: str) -> dict[str, list[str]]:
+    """Lines a unified diff removes ("-") or adds ("+"), per path. Short lines like ')' are skipped."""
     out: dict[str, list[str]] = collections.defaultdict(list)
+    header = "--- a/" if sign == "-" else "+++ b/"
     path = None
     for line in diff.splitlines():
-        if line.startswith("--- "):
-            path = line[6:] if line.startswith("--- a/") else None
-        elif line.startswith("-") and not line.startswith("---") and path:
+        if line.startswith(header[:4]):
+            path = line[6:] if line.startswith(header) else None
+        elif line.startswith(sign) and not line.startswith(sign * 3) and path:
             text = line[1:].strip()
             if len(text) >= 12:
                 out[path].append(text)
     return out
+
+
+def removed_lines_by_file(diff: str) -> dict[str, list[str]]:
+    return changed_lines(diff, "-")
 
 
 def superseded(repo: str, number: int, base: str) -> str | None:
@@ -576,7 +581,7 @@ def collect_status(workers: int = 4) -> dict:
 # ---------------------------------------------------------------- ledger
 
 LEDGER_COLUMNS = ["listed", "item", "source", "type", "est_lines", "pr", "opened", "lines",
-                  "state", "merged", "hours", "reason", "brief"]
+                  "state", "merged", "hours", "reason", "brief", "later"]
 
 
 def read_ledger(path: Path) -> list[dict]:
@@ -690,8 +695,49 @@ def infer_source(body: str) -> str:
     return f"issue #{m.group(1)}" if m else ""
 
 
+# Kye reverts with GitHub's Revert button, which opens a PR whose body is "Reverts <repo>#N".
+REVERTS = re.compile(r"\bReverts (?:[\w.-]+/[\w.-]+)?#(\d+)")
+FOLLOW_UP_DAYS = 14
+
+
+def undone_later(mine: list[dict], merged: list[dict], diffs_of) -> dict[int, str]:
+    """What became of my merged PRs: {number: "reverted by #N" or "changed by fix #N"}.
+
+    merged is every PR merged in the repo since the oldest of mine, with its author and files, and
+    diffs_of maps PR numbers to their diffs. A later
+    [FIX] counts when someone else wrote it, it merged within FOLLOW_UP_DAYS, and it removes a line mine
+    added outside tests and examples. Over two weeks of merges that rule paired 7 PRs, 3 of them a real
+    rework, so the result is a lead to read. Counting lines put back, or my own later fixes, added only
+    coincidences.
+    """
+    out: dict[int, str] = {}
+    for p in merged:
+        m = REVERTS.search(p.get("body") or "")
+        if m and p["title"].startswith("Revert"):
+            out[int(m.group(1))] = f"reverted by #{p['number']}"
+    files = {p["number"]: {f["path"] for f in p.get("files") or [] if not f["path"].startswith(("tests/", "examples/"))}
+             for p in merged}
+    fixes = sorted((p for p in merged if pr_type(p["title"]) == "FIX" and p["author"]["login"] != USER),
+                   key=lambda p: p["mergedAt"])
+    pairs = []
+    for pr in mine:
+        number, start = pr["number"], parse_ts(pr["mergedAt"])
+        for fix in fixes:
+            shared = files.get(number, set()) & files[fix["number"]]
+            gap = parse_ts(fix["mergedAt"]) - start
+            if number not in out and shared and dt.timedelta(0) < gap <= dt.timedelta(days=FOLLOW_UP_DAYS):
+                pairs.append((number, fix["number"], shared))
+    diffs = diffs_of(sorted({n for mine_n, fix_n, _ in pairs for n in (mine_n, fix_n)}))
+    for number, fix, shared in pairs:  # fixes are in merge order, so the first match is the earliest
+        added, removed = changed_lines(diffs[number], "+"), changed_lines(diffs[fix], "-")
+        if number not in out and any(set(added.get(f, [])) & set(removed.get(f, [])) for f in shared):
+            out[number] = f"changed by fix #{fix}"
+    return out
+
+
 def ledger_sync(path: Path, since: dt.date | None) -> tuple[int, int]:
     rows = read_ledger(path)
+    follow_from = since or dt.date.today() - dt.timedelta(days=FOLLOW_UP_DAYS + 1)
     if since is None:
         dates = [r["listed"] for r in rows if r.get("listed")] + [r["opened"][:10] for r in rows if r.get("opened")]
         if not dates:
@@ -701,6 +747,17 @@ def ledger_sync(path: Path, since: dt.date | None) -> tuple[int, int]:
     for repo in REPO_LABEL:
         prs = gh("pr", "list", "--repo", repo, "--author", USER, "--state", "all", "--limit", "1000", "--json",
                  "number,title,state,createdAt,mergedAt,closedAt,additions,deletions,url,reviewDecision,body")
+        # Every sync asks: a revert that merged this fortnight can undo a PR of any age.
+        merged = gh("pr", "list", "--repo", repo, "--state", "merged", "--limit", "1000", "--search",
+                    f"merged:>={follow_from.isoformat()}", "--json", "number,title,body,author,mergedAt,files") or []
+        mine = [p for p in prs if p.get("mergedAt") and parse_ts(p["mergedAt"]).astimezone().date() >= follow_from]
+
+        def diffs_of(numbers: list[int], repo: str = repo) -> dict[int, str]:
+            with cf.ThreadPoolExecutor(max_workers=4) as pool:
+                return dict(zip(numbers, pool.map(
+                    lambda n: gh("pr", "diff", str(n), "--repo", repo, json_out=False), numbers)))
+
+        later = undone_later(mine, merged, diffs_of)
         for p in prs:
             created = parse_ts(p["createdAt"])
             if created.astimezone().date() < since:
@@ -724,6 +781,7 @@ def ledger_sync(path: Path, since: dt.date | None) -> tuple[int, int]:
             row["item"] = row.get("item") or p["title"]
             row["listed"] = row.get("listed") or local(created, "%Y-%m-%d")
             row["source"] = row.get("source") or infer_source(p.get("body", "")) or "unknown"
+            row["later"] = later.get(p["number"]) or row.get("later", "")
             if not row.get("reason") and (state == "closed" or p.get("reviewDecision") == "CHANGES_REQUESTED"):
                 row["reason"] = maintainer_reason(repo, p["number"]) or ("closed with no comment from Kye" if state == "closed" else "")
     updated += fold_by_brief(rows)
@@ -758,6 +816,10 @@ def ledger_stats(rows: list[dict], days: int | None, repo: str | None) -> str:
     lines += [""] + table("Source", lambda r: ((r.get("source") or "unknown").split() or ["unknown"])[0])
     never = [r for r in rows if not r.get("pr")]
     lines += ["", f"Listed but never opened: {len(never)}."]
+    merged = [r for r in with_pr if r["state"] == "merged"]
+    undone = [r for r in merged if r.get("later")]
+    lines += ["", f"Reverted, or changed by someone's fix within {FOLLOW_UP_DAYS} days of merging: {len(undone)} of {len(merged)} merged."]
+    lines += [f"- {r['pr']} {r['item']}: {r['later']}" for r in undone]
     closed = [r for r in with_pr if r["state"] == "closed" or r.get("reason")]
     if closed:
         lines += ["", "Declined or changes requested:"]
