@@ -82,6 +82,60 @@ class Titles(unittest.TestCase):
         self.assertEqual(swarms.budget_for([("swarms/a.py", 108), ("tests/t.py", 57)]), (108, 57, 108))
 
 
+class Style(unittest.TestCase):
+    def test_flags_only_what_the_added_lines_break(self):
+        head = "\n".join([
+            "def old(a):",                # 1  already there, so its backtick and missing types don't count
+            '    """Return `a`."""',      # 2
+            "    return a",               # 3
+            "",                           # 4
+            "def edited(a, b):",          # 5  added, but the diff removes the old first line too
+            '    """Add `b` to a."""',    # 6  added: backtick
+            "    # first",                # 7  added
+            "    # second",               # 8  added: a block
+            '    text = """',             # 9
+            "# a heading in a prompt",    # 10 added: inside a string, so not a comment
+            "# and another",              # 11 added
+            '"""',                        # 12
+            "    # ----------",           # 13 added: a divider
+            "    return a + b  # inline",  # 14 added
+            "",                           # 15
+            "def fresh(x, *rest, y: int = 0):",  # 16 added: no docstring, no type on x, *rest or the return
+            "    return x + y",           # 17
+            "",                           # 18
+            "def _typed(x: int) -> int:",  # 19 added: private and typed
+            "    return x",               # 20
+            "",                           # 21
+            "class Worker:",              # 22 added, where a module-level run() stood
+            '    """Run things."""',      # 23 added
+            "    def run(self, x):",      # 24 added: a new method, one level deeper than the old run()
+            "        return x",           # 25 added
+        ]) + "\n"
+        added = {5, 6, 7, 8, 10, 11, 13, 14, 16, 17, 19, 20, 22, 23, 24, 25}
+        # edited()'s old first line stood at line 5. A fresh() removed elsewhere doesn't make line 16 an edit.
+        removed = [(5, "def edited(a):"), (1, "def fresh(x):"), (22, "def run(x):")]
+        found = swarms.style_findings("swarms/x.py", head, added, removed)
+        self.assertEqual([(n, msg.split(";")[0]) for n, msg in found], [
+            (6, "backtick in a docstring"),
+            (7, "comment block of 2 lines"),
+            (13, "divider comment"),
+            (16, "new function fresh has no type on parameter x, parameter *rest, the return value"),
+            (16, "new public function fresh has no docstring"),
+            (24, "new function run has no type on parameter x, the return value"),
+            (24, "new public function run has no docstring"),
+        ])
+        self.assertEqual([n for n, _ in swarms.style_findings("tests/x.py", head, added, [])], [6, 7, 13])
+        whole = swarms.style_findings("swarms/x.py", head, None, [])  # --all: old code counts too
+        self.assertIn((1, "function old has no type on parameter a, the return value"), whole)
+        self.assertIn((2, "backtick in a docstring; write the name as plain words"), whole)
+
+    def test_added_lines_reads_new_line_numbers_and_removed_text(self):
+        diff = ("diff --git a/swarms/a.py b/swarms/a.py\n--- a/swarms/a.py\n+++ b/swarms/a.py\n"
+                "@@ -3,3 +3,4 @@ def f():\n keep\n-old line\n+new line\n+++ plus\n keep\n"
+                "diff --git a/gone.py b/gone.py\n--- a/gone.py\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n")
+        self.assertEqual(swarms.added_lines(diff), {"swarms/a.py": ({4, 5}, [(4, "old line")])})
+
+
 class Lint(unittest.TestCase):
     def test_flags_dashes_quotes_and_vocabulary_outside_code(self):
         text = "A crucial fix — really.\nSay “done”.\n```\ncrucial = 1\n```\nUse `delve` here."

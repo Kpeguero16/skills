@@ -22,6 +22,7 @@ Run it as `python3 <this folder>/scripts/swarms.py <command>`, or `py -3 ...` on
 | `run --tree T [--log F] -- CMD` | Runs CMD in T with the pinned offline environment, after checking that `swarms` imports from T. `python`, `pytest`, `black` and `ruff` run from the swarms venv. |
 | `prove --base B --head H [--copy F...] [--evidence DIR] -- CMD` | Runs CMD in both trees. It prints `PROOF` and exits 0 only when CMD fails on base and passes on head. |
 | `test-budget [N] [--tree T] [--base REF]` | Non-blank test lines added, against the larger of 20 and the non-blank lines added under `swarms/`, for PR N or for T's commits since `upstream/master`. Exits 1 when the tests are over. |
+| `style [N] [--tree T] [--base REF] [--all PATH...] [--only KIND]` | The style rules in the swarms `CLAUDE.md`, checked on the lines that PR N or T's commits add: a backtick in a docstring, a comment block or a divider comment, and under `swarms/` a new definition with no docstring, or with a parameter or return value that has no type. Each finding names the fix. Exits 1 on any finding. `--all` checks every line of the paths inside T, which lists old code to clean up, and `--only` keeps one kind: `backtick`, `comment`, `docstring` or `type`. |
 | `status [--out F]` | Facts, signals and a verdict hint (wait, nudge, rebase, rework, close) for every open PR, plus PRs merged in the last 24 hours. |
 | `ci N [--repo docs]` | For each failing check on the PR, the failing tests and lint findings that the same job didn't have on the base commit the run tested, as named in its log's merge line. Only `RESULT clean` exits 0. `RESULT pending` means a job is still running, so run it again when the watch reports. `RESULT unknown` means a log named nothing or a job had no base run, so read that job yourself. |
 | `snapshot --dest DIR` | Fresh shallow clones of both repos' default branches. |
@@ -51,6 +52,7 @@ The defaults are the Mac layout. Set these to override them, for example on the 
 
 - `unused` and `scan` count names in text. getattr, string dispatch and framework hooks are invisible to them, so a hit is a lead to read, not proof.
 - `scan` knows one such reader. `capture_init` reports every constructor parameter by reading it off `self`, so `scan` prints a `WARN telemetry reads` line for a name that is a parameter of a class calling it. That attribute isn't unused.
+- `style` reads only what a diff adds, so it never asks for old code to be fixed. It can't judge a comment that narrates the code, a vague name or tight spacing. Those still need a read.
 - `status` hints are mechanical. The `swarms-status` skill reads the evidence and decides the verdict.
 - In the main clones, only `checkout` and `cleanup` run git, and only `fetch` and `worktree`. Nothing here checks out, stashes or switches a branch there.
 - The ledger's `later` column compares lines of text. A fix that removes one of my lines for its own reasons shows up there too, so read both PRs before calling it a miss.

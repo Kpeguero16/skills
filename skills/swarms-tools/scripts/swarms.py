@@ -14,6 +14,7 @@ import collections
 import concurrent.futures as cf
 import datetime as dt
 import hashlib
+import io
 import json
 import os
 import platform
@@ -24,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tokenize
 from pathlib import Path
 
 USER = "Kpeguero16"
@@ -298,6 +300,109 @@ def lint_text(text: str, discord: bool = False, vocabulary: list[str] | None = N
     if discord and len(text) >= 2000:
         found.append((0, f"{len(text)} characters; Discord rejects 2,000 or more"))
     return found
+
+
+# ---------------------------------------------------------------- style
+
+# The swarms CLAUDE.md asks for these in prose, and says of one: "Multi-line comment blocks keep
+# arriving in PRs and keep getting removed." Only the lines a change adds are checked.
+DIVIDER = re.compile(r"#\s*[-=*#~_]{4,}")
+DEFS = (ast.FunctionDef, ast.AsyncFunctionDef)
+STYLE_KINDS = {"backtick": "backtick in a docstring", "comment": "comment", "docstring": "no docstring", "type": "no type"}
+
+
+def added_lines(diff: str) -> dict[str, tuple[set[int], list[tuple[int, str]]]]:
+    """Per new path in a unified diff: the line numbers it adds, and each line it removes with the
+    new-file line number where it used to sit."""
+    out: dict[str, tuple[set[int], list[tuple[int, str]]]] = {}
+    path, n, in_hunk = None, 0, False
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            path, in_hunk = None, False
+        elif not in_hunk and line.startswith("+++ "):
+            path = line[6:] if line.startswith("+++ b/") else None
+            if path:
+                out[path] = (set(), [])
+        elif line.startswith("@@"):
+            n, in_hunk = int(re.match(r"@@ -\d+(?:,\d+)? \+(\d+)", line).group(1)), True
+        elif in_hunk and path:
+            if line.startswith("+"):
+                out[path][0].add(n)
+                n += 1
+            elif line.startswith("-"):
+                out[path][1].append((n, line[1:]))
+            elif not line.startswith("\\"):
+                n += 1
+    return out
+
+
+def style_findings(path: str, text: str, added: set[int] | None,
+                   removed: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    """(line, what to fix) where the lines a change adds to one Python file break a swarms style rule.
+
+    Backticks in docstrings, comment blocks and dividers count in every file. A missing docstring or
+    type hint counts under swarms/ only, and only on a definition the change adds. With added None,
+    every line counts, which is how picks finds old code to clean up.
+    """
+    tree = ast.parse(text)
+    lines = text.splitlines()
+    found: list[tuple[int, str]] = []
+    fresh = "new " if added is not None else ""
+    if added is None:
+        added = set(range(1, len(lines) + 1))
+
+    # Whole-line comments. A line that starts with # inside a prompt string isn't one, so ask the tokenizer.
+    comments = [tok.start[0] for tok in tokenize.generate_tokens(io.StringIO(text).readline)
+                if tok.type == tokenize.COMMENT and not tok.line[: tok.start[1]].strip()
+                and not tok.string.startswith("#!")]
+    run: list[int] = []
+    for n in [*comments, 0]:
+        if run and n == run[-1] + 1:
+            run.append(n)
+            continue
+        new = [x for x in run if x in added]
+        if len(run) > 1 and new:
+            found.append((new[0], f"comment block of {len(run)} lines; keep one short line, or move it into the docstring"))
+        elif new and DIVIDER.match(lines[new[0] - 1].strip()):
+            found.append((new[0], "divider comment; delete it"))
+        run = [n]
+
+    nested = {sub for node in ast.walk(tree) if isinstance(node, DEFS)
+              for sub in ast.walk(node) if sub is not node and isinstance(sub, (*DEFS, ast.ClassDef))}
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Module, ast.ClassDef, *DEFS)):
+            continue
+        first = node.body[0] if node.body else None
+        doc = first if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) \
+            and isinstance(first.value.value, str) else None
+        if doc:
+            found += [(n, "backtick in a docstring; write the name as plain words")
+                      for n in range(doc.lineno, doc.end_lineno + 1) if n in added and "`" in lines[n - 1]]
+        if isinstance(node, ast.Module) or not path.startswith("swarms/") or node.lineno not in added:
+            continue
+        is_class = isinstance(node, ast.ClassDef)
+        keyword = "class" if is_class else "def"
+        if any(added.issuperset(range(at, node.lineno + 1)) and len(old) - len(old.lstrip()) == node.col_offset
+               and re.search(rf"\b{keyword}\s+{re.escape(node.name)}\b", old)
+               for at, old in removed if at <= node.lineno):
+            continue  # already there: the change replaces its first line where it stood, at the same depth
+        accessor = any(isinstance(d, ast.Attribute) and d.attr in ("setter", "deleter") or
+                       isinstance(d, ast.Name) and d.id == "overload" for d in node.decorator_list)
+        if doc is None and not node.name.startswith("_") and node not in nested and not accessor:
+            found.append((node.lineno, f"{fresh}public {'class' if is_class else 'function'} {node.name} has no docstring; "
+                                       "write a short phrase, then Args and Returns"))
+        if is_class:
+            continue
+        params = node.args.posonlyargs + node.args.args + node.args.kwonlyargs
+        missing = [f"parameter {p.arg}" for i, p in enumerate(params)
+                   if p.annotation is None and not (i == 0 and p.arg in ("self", "cls"))]
+        missing += [f"parameter {stars}{p.arg}" for stars, p in (("*", node.args.vararg), ("**", node.args.kwarg))
+                    if p and p.annotation is None]
+        if node.returns is None and node.name != "__init__":
+            missing.append("the return value")
+        if missing:
+            found.append((node.lineno, f"{fresh}function {node.name} has no type on {', '.join(missing)}"))
+    return sorted(found)
 
 
 # ---------------------------------------------------------------- PR facts
@@ -1947,22 +2052,67 @@ def cmd_publish(a):
     return publish_post(task, m, a.label_wait)
 
 
-def cmd_test_budget(a):
+def change_under_review(a):
+    """The diff of swarms PR a.number, or of a.tree's commits since a.base, and a reader for its files."""
     if a.number:
         diff = gh("pr", "diff", str(a.number), "--repo", SWARMS, json_out=False)
-    elif a.tree:
-        tree = Path(a.tree).resolve()
-        if git(tree, "status", "--porcelain", "--untracked-files=all"):
-            print("WARN uncommitted changes aren't counted; commit first")
-        base = git(tree, "merge-base", a.base, "HEAD")
-        diff = git(tree, "diff", "--no-renames", "--unified=0", base, "HEAD")
-    else:
+        return diff, lambda path: raw_file(SWARMS, path, f"refs/pull/{a.number}/head")
+    if not a.tree:
         raise SystemExit("FAIL give a PR number or --tree")
+    tree = Path(a.tree).resolve()
+    if git(tree, "status", "--porcelain", "--untracked-files=all"):
+        print("WARN uncommitted changes aren't counted; commit first")
+    base = git(tree, "merge-base", a.base, "HEAD")
+    diff = git(tree, "diff", "--no-renames", "--unified=0", base, "HEAD")
+
+    def read(path: str) -> str | None:  # from HEAD, like the diff: the working tree can hold later edits
+        p = subprocess.run(["git", "-C", str(tree), "show", f"HEAD:{path}"], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        return p.stdout if p.returncode == 0 else None
+
+    return diff, read
+
+
+def cmd_test_budget(a):
+    diff, _ = change_under_review(a)
     source, tests, budget = budget_for(diff_files(diff))
     ok = tests <= budget
     print(f"{'PASS' if ok else 'FAIL'} tests add {tests} non-blank lines; the budget is {budget}, "
           f"the larger of {TEST_FLOOR} and the {source} non-blank lines added under swarms/")
     return 0 if ok else 1
+
+
+def cmd_style(a):
+    if a.all:
+        if not a.tree:
+            raise SystemExit("FAIL --all needs --tree")
+        tree = Path(a.tree).resolve()
+        files = sorted({f for arg in a.all for f in ([tree / arg] if (tree / arg).is_file() else (tree / arg).rglob("*.py"))})
+        jobs = [(f.relative_to(tree).as_posix(), None, [], f.read_text(encoding="utf-8", errors="replace")) for f in files]
+    else:
+        diff, read = change_under_review(a)
+        jobs = [(path, added, removed, read(path)) for path, (added, removed) in sorted(added_lines(diff).items())
+                if added and path.endswith(".py")]
+    total = 0
+    for path, added, removed, text in jobs:
+        if text is None:
+            continue
+        try:
+            found = style_findings(path, text, added, removed)
+        except (SyntaxError, tokenize.TokenError) as e:
+            print(f"WARN {path} doesn't parse, so it wasn't checked: {e}")
+            continue
+        found = [(line, msg) for line, msg in found if not a.only or STYLE_KINDS[a.only] in msg]
+        for line, msg in found:
+            print(f"{path}:{line}: {msg}")
+        total += len(found)
+    where, fresh = ("every line of the paths given", "") if a.all else ("the lines this change adds", "new ")
+    if total:
+        print(f"FAIL {total} places break the swarms CLAUDE.md style rules, in {where}")
+        return 1
+    print(f"PASS no docstring backticks, comment blocks or dividers, and no {fresh}definition under swarms/ "
+          f"without a docstring or type hints, in {where}")
+    return 0
 
 
 def cmd_lint(a):
@@ -2108,6 +2258,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tree", help="a worktree whose commits since --base to count")
     p.add_argument("--base", default="upstream/master")
     p.set_defaults(func=cmd_test_budget)
+
+    p = sub.add_parser("style", help="the swarms CLAUDE.md style rules, checked on the lines a change adds")
+    p.add_argument("number", type=int, nargs="?", help="a swarms PR; or use --tree for a local branch")
+    p.add_argument("--tree", help="a worktree whose commits since --base to check")
+    p.add_argument("--base", default="upstream/master")
+    p.add_argument("--all", nargs="+", metavar="PATH", help="check every line of these paths inside --tree, not a diff")
+    p.add_argument("--only", choices=sorted(STYLE_KINDS), help="print one kind of finding")
+    p.set_defaults(func=cmd_style)
 
     p = sub.add_parser("lint", help="em dashes, curly quotes, unslop vocabulary; --discord adds the 2,000 limit")
     p.add_argument("files", nargs="+", help="files, or - for stdin")
