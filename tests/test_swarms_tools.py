@@ -596,6 +596,20 @@ class Environment(unittest.TestCase):
         self.assertEqual([m["head_sha"] for m in made], ["a" * 40, "c" * 40])
         self.assertEqual(made[0]["base_sha"], "b" * 40)
 
+    def test_snapshot_replaces_an_old_one_and_clones_with_long_paths_on(self):
+        """On Windows git's pack files are read-only, and a fresh clone doesn't inherit the main clone's core.longpaths."""
+        done = mock.Mock(returncode=0, stdout="abc1234\n", stderr="")
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(swarms.subprocess, "run", return_value=done) as run:
+            pack = Path(tmp) / "snap" / "old.pack"
+            pack.parent.mkdir()
+            (pack.parent / ".swarms-snapshot").write_text("", encoding="utf-8")
+            pack.write_text("x", encoding="utf-8")
+            pack.chmod(0o444)
+            swarms.main(["snapshot", "--dest", str(pack.parent)])
+            self.assertFalse(pack.exists())
+        clones = [c.args[0] for c in run.call_args_list if "clone" in c.args[0]]
+        self.assertEqual([("core.longpaths=true" in c) for c in clones], [True, True])
+
 
 class Secrets(unittest.TestCase):
     def test_redact(self):
