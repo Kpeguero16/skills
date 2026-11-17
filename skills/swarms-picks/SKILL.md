@@ -37,6 +37,12 @@ d) **Bugs found by reading.** Pick one or two framework modules not listed under
 
 e) **Deletions**, which Kye welcomes. `python3 $T unused <area> --tree <snapshot>/swarms --docs <snapshot>/swarms-framework-docs`, rotating the area each day. Each hit is a lead: read the code, then `python3 $T scan <name> --tree ... --docs ...` for every mention. Public API needs more than "nothing calls it". Check whether it's documented and maintained (`gh api "repos/kyegomez/swarms/commits?path=<file>&per_page=10"`), and lead with what's wrong with it, such as a parameter that does nothing.
 
+f) **Lint leads.** `python3 $T leads <area> --tree <snapshot>/swarms`, on the same area as e). It runs ruff rules that the repo's lint job doesn't, and it doesn't import swarms. A parameter that a method never reads is a deletion and follows e): `scan` it, and leave it alone when an interface or a subclass needs the signature. A dropped exception, a mutable default and a loop closure are bug leads and follow d): each needs the input that gives a wrong result.
+
+g) **Siblings.** `python3 $T merged --days 7 --type FIX PERF` lists the fixes that merged this week, anyone's. When a fix names a bug that other classes can share, such as a default, a pool size or a `tool_choice`, grep the snapshot for the same code elsewhere and confirm each place by reading. Kye has accepted that fix once already, and other contributors take the siblings too: #3472 and #3432 were siblings of fixes I had open. List every confirmed sibling as its own item on the same day. When three or more places share the bug, add one more item that removes the class, a shared helper or a check, as Kye did in #3485 after five separate `tool_choice` fixes.
+
+h) **Kye's written rules.** The swarms `CLAUDE.md` bans backticks in docstrings and comment blocks, and asks for a docstring and type hints on every definition. Old code breaks all four, and nothing in CI checks them. `python3 $T style --all <area> --tree <snapshot>/swarms --only backtick` lists the lines, and the other kinds are `comment`, `docstring` and `type`. A candidate is a batch of files that no open PR touches, small enough to stay under 100 changed lines, as #3403 and #3418 were. List at most one batch a day, below every bug and deletion. When a kind is down to its last batch, add the item that keeps it at zero: the ruff rules in `pyproject.toml` for docstrings (`D101`, `D102`, `D103`) or types (`ANN001`, `ANN201`), or a short check in the lint job for backticks and comment blocks. That brief leads with Kye's own rule and says that he hasn't asked for the check.
+
 ## 4. Check every candidate
 
 - **Competition:** `python3 $T competition <issue number> <symbol>`, with `--removed '<regex>'` for a deletion. Read why any attempt was closed. A PR existing isn't a reason to drop a candidate, because the smaller PR tends to win: give the competitor's size and whether a smaller PR is realistic. Drop it if a recent small PR already does the job.
@@ -45,7 +51,7 @@ e) **Deletions**, which Kye welcomes. `python3 $T unused <area> --tree <snapshot
 
 ## 5. Rank
 
-**Shortlist:** up to 10 items of 100 lines or less. Named bounties and Kye's direct requests first. Then rank by the ledger: the types, sizes and sources that merged fastest over the last 30 days go higher, and the ones that stall go lower. Say in one line what the ledger showed. Aim for at least 3 deletions when the evidence supports it. Mark a repeat with the date it was first listed.
+**Shortlist:** up to 10 items of 100 lines or less. Named bounties and Kye's direct requests first. Then rank by the ledger: the types, sizes and sources that merged fastest over the last 30 days go higher, and the ones that stall go lower. Say in one line what the ledger showed. Aim for at least 3 deletions when the evidence supports it. Keep the siblings of one bug next to each other, so they can go out together. Mark a repeat with the date it was first listed.
 
 **Big PRs:** up to 3 items over 100 lines. Pick the ones most likely to merge: bounties and Kye's requests first, then open issues with clear acceptance criteria, framework and API work, and nothing a recent PR already covers. Say how each could split into PRs under 100 lines, or why it can't. Write "None found" with the reason rather than padding the section with weak items.
 
@@ -53,7 +59,7 @@ e) **Deletions**, which Kye welcomes. `python3 $T unused <area> --tree <snapshot
 
 1. The report, to `<tasks>/daily-opportunities/<date>.md`.
 2. One brief per item in the Shortlist and Big PRs sections, to `<tasks>/handoffs/<date>/<N>-<slug>.md`.
-3. One ledger row per item: `python3 $T ledger add --item "<title>" --source "<source>" --est <lines> --brief <brief path>`. The source is one of `issue #N`, `meeting YYYY-MM-DD`, `bounty`, `kye request`, `bug found by reading` or `deletion`.
+3. One ledger row per item: `python3 $T ledger add --item "<title>" --source "<source>" --est <lines> --brief <brief path>`. The source is one of `issue #N`, `meeting YYYY-MM-DD`, `bounty`, `kye request`, `bug found by reading`, `deletion`, `lint lead`, `sibling of #N` or `style rule`.
 4. Remove the snapshot folder.
 5. Give the report as your final message.
 
@@ -68,9 +74,10 @@ One line each with a link and the action, from the status report, or "None".
 
 ## Shortlist
 ### N. [TYPE][Symbol][Imperative description]
-- Source: bounty / meeting (date) / issue link / found by reading / deletion
+- Source: bounty / meeting (date) / issue link / found by reading / deletion / lint lead / sibling of #N / style rule
 - Size: about N lines, in <files>
 - Evidence: file:line and the failing input, or for a deletion the scan result and what's wrong with it
+- Siblings: the other items here that fix the same bug elsewhere, or none
 - Competition: none, or #N by <author> (+x/-y) and whether a smaller PR is realistic
 - Docs: none, or the page
 - Brief: <brief path>
@@ -86,7 +93,7 @@ Or "None found" and why.
 Only what changes priorities, or "None".
 
 ## Scanned today
-Modules read for bugs, and the area checked for deletions.
+Modules read for bugs, and the area checked for deletions, lint leads and style rules.
 
 ## Gaps
 Any source that failed, stated plainly. Always include: "Discord was not checked, so bounties or requests posted only there will not appear."

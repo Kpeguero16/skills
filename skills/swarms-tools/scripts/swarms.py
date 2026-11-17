@@ -1077,6 +1077,47 @@ def find_unused(paths: list[Path], tree: Path, docs: Path | None) -> list[dict]:
     return out
 
 
+# ---------------------------------------------------------------- leads
+
+# Ruff rules the swarms lint job doesn't run: it runs ruff's defaults. Each hit is a lead to read.
+LEAD_RULES = {
+    "ARG002": "a parameter the method never reads: a deletion, once scan shows who passes it",
+    "S110": "try/except/pass: the error is dropped, which can hide a failed call",
+    "B006": "a mutable default argument: every call shares one list or dict",
+    "B023": "a function made in a loop reads the loop variable, which has moved on when it runs",
+}
+
+
+def ruff_command() -> list[str]:
+    """ruff from the swarms venv, else from PATH, else through uvx."""
+    py = venv_python()
+    if py.exists() and subprocess.run([str(py), "-m", "ruff", "--version"], capture_output=True).returncode == 0:
+        return [str(py), "-m", "ruff"]
+    for tool in ("ruff", "uvx"):
+        found = shutil.which(tool)
+        if found:
+            return [found] if tool == "ruff" else [found, "ruff"]
+    raise SystemExit(f"FAIL no ruff. Install it with: {py} -m pip install ruff")
+
+
+def parse_leads(ruff_json: str, tree: Path) -> dict[str, list[str]]:
+    """{rule: ["path:line message", ...]} from ruff's JSON output, with paths relative to the tree."""
+    hits: dict[str, list[tuple[str, int, str]]] = collections.defaultdict(list)
+    for hit in json.loads(ruff_json or "[]"):
+        path = Path(hit["filename"]).resolve()
+        rel = path.relative_to(tree).as_posix() if tree in path.parents else str(path)
+        hits[hit["code"]].append((rel, hit["location"]["row"], hit["message"]))
+    return {rule: [f"{rel}:{row} {msg}" for rel, row, msg in sorted(found)] for rule, found in hits.items()}
+
+
+def merged_prs(repo: str, days: int) -> list[dict]:
+    """Every PR merged into the repo in the last N days, anyone's, newest first, with its files."""
+    since = (dt.date.today() - dt.timedelta(days=days)).isoformat()
+    prs = gh("pr", "list", "--repo", repo, "--state", "merged", "--limit", "1000", "--search", f"merged:>={since}",
+             "--json", "number,title,author,mergedAt,files") or []
+    return sorted(prs, key=lambda p: p["mergedAt"], reverse=True)
+
+
 # ---------------------------------------------------------------- competition
 
 
@@ -1899,6 +1940,34 @@ def cmd_unused(a):
         print(f"{d['kind']:9} {owner}{d['name']}  {d['file']}:{d['line']}  ({d['lines']} lines, {notes})")
 
 
+def cmd_leads(a):
+    tree = Path(a.tree).resolve()
+    rules = a.select.split(",") if a.select else list(LEAD_RULES)
+    p = subprocess.run([*ruff_command(), "check", "--isolated", "--no-cache", "--exit-zero", "--select", ",".join(rules),
+                        "--output-format", "json", *a.paths], cwd=tree, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    if p.returncode != 0:
+        raise SystemExit(f"FAIL ruff: {(p.stderr or p.stdout).strip()[-600:]}")
+    found = parse_leads(p.stdout, tree)
+    for rule in rules:
+        hits = found.get(rule, [])
+        print(f"{rule}: {len(hits)}" + (f" ({LEAD_RULES[rule]})" if rule in LEAD_RULES else ""))
+        for hit in hits[: a.limit]:
+            print(f"  {hit}")
+
+
+def cmd_merged(a):
+    repo = DOCS if a.repo == "docs" else SWARMS
+    types = {t.upper() for t in a.type or []}
+    prs = [p for p in merged_prs(repo, a.days) if not types or pr_type(p["title"]) in types]
+    print(f"# {len(prs)} PRs merged into {repo} in the last {a.days} days, newest first; tests and examples left out of the files")
+    for p in prs:
+        paths = [f["path"] for f in p.get("files") or [] if not f["path"].startswith(("tests/", "examples/"))]
+        print(f"#{p['number']} {p['mergedAt'][:10]} {p['author']['login']} {p['title']}")
+        if paths:
+            print(f"  {', '.join(paths[:6])}{' ...' if len(paths) > 6 else ''}")
+
+
 def cmd_competition(a):
     repo = DOCS if a.repo == "docs" else SWARMS
     rows = competition(repo, a.terms, a.removed, set(a.allow or []))
@@ -2211,6 +2280,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--docs")
     p.add_argument("--limit", type=int, default=60)
     p.set_defaults(func=cmd_unused)
+
+    p = sub.add_parser("leads", help="ruff findings from rules the swarms lint job doesn't run, as leads to read")
+    p.add_argument("paths", nargs="+", help="paths inside --tree, such as swarms/structs")
+    p.add_argument("--tree", required=True)
+    p.add_argument("--select", help=f"ruff rules, comma-separated; default {','.join(LEAD_RULES)}")
+    p.add_argument("--limit", type=int, default=40, help="hits to print per rule")
+    p.set_defaults(func=cmd_leads)
+
+    p = sub.add_parser("merged", help="every PR merged in the last N days, anyone's, with the files it touched")
+    p.add_argument("--days", type=int, default=7)
+    p.add_argument("--repo", choices=["swarms", "docs"], default="swarms")
+    p.add_argument("--type", nargs="+", help="only these title types, such as FIX PERF")
+    p.set_defaults(func=cmd_merged)
 
     p = sub.add_parser("competition", help="PRs that mention these terms, and whether they remove the same lines")
     p.add_argument("terms", nargs="+")
