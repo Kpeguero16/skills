@@ -1481,9 +1481,11 @@ def publish_checks(task: Path, m: dict, on: str | None) -> list[str]:
             cmp = gh("api", f"repos/{repo}/compare/{pr['base']}...{pr['sha']}")
             say("INFO", f"{tag} ahead {cmp['ahead_by']}, behind {cmp['behind_by']} of {pr['base']}")
             if by_sol and repo == SWARMS:
-                changed = sum(f.get("additions", 0) + f.get("deletions", 0) for f in cmp.get("files") or [])
-                say("PASS" if changed <= SOL_MAX_LINES else "FAIL", f"{tag} {changed} changed lines, and Sol approves "
-                    f"up to {SOL_MAX_LINES}" + ("" if changed <= SOL_MAX_LINES else "; Khalil approves this one"))
+                files = cmp.get("files") or []  # compare lists at most 300 files, so a full list may be cut short
+                changed = sum(f.get("additions", 0) + f.get("deletions", 0) for f in files)
+                small = changed <= SOL_MAX_LINES and len(files) < 300
+                say("PASS" if small else "FAIL", f"{tag} {changed} changed lines in {len(files)} file(s), and Sol approves "
+                    f"up to {SOL_MAX_LINES} lines in under 300 files" + ("" if small else "; Khalil approves this one"))
             if pr.get("commits") and cmp["ahead_by"] != pr["commits"]:
                 say("FAIL", f"{tag} expected {pr['commits']} commit(s) ahead of {pr['base']}, found {cmp['ahead_by']}")
             mine = {f["filename"] for f in cmp.get("files") or []}
