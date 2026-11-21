@@ -41,6 +41,7 @@ NOISE_CHECKS = {DOCS: {"Bounty guard"}}
 AI_LABEL = "ai-generated"
 ROBOT_LINE = "🤖 Generated with"
 SIZE_BUCKETS = ((30, "under 30"), (100, "30 to 99"), (300, "100 to 299"), (None, "300 and up"))
+SOL_MAX_LINES = 100  # Sol's approval posts a framework PR this small; a bigger one or a security fix waits for Khalil
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILLS_DIR = SCRIPT_DIR.parent.parent
 
@@ -1449,6 +1450,9 @@ def publish_checks(task: Path, m: dict, on: str | None) -> list[str]:
         want = dict(line.split("  ", 1)[::-1] for line in approved.read_text(encoding="utf-8").splitlines() if "  " in line)
         bad = [f for f in approved_files(m) if f not in want or not (task / f).exists() or sha256(task / f) != want[f]]
         say("FAIL" if bad else "PASS", f"approved text changed or missing: {', '.join(bad)}" if bad else "approved text and publish.json unchanged")
+    by_sol = m.get("approved_by") == "sol"
+    if by_sol and (m.get("security") or all(pr["repo"] != SWARMS for pr in m["prs"])):
+        say("FAIL", "Sol approves only a framework PR that isn't a security fix; run `publish approve` after Khalil does")
     lines += issue_checks(task, m)
     for pr in m["prs"]:
         repo, (owner, branch) = pr["repo"], pr["head"].split(":", 1)
@@ -1476,6 +1480,12 @@ def publish_checks(task: Path, m: dict, on: str | None) -> list[str]:
         try:
             cmp = gh("api", f"repos/{repo}/compare/{pr['base']}...{pr['sha']}")
             say("INFO", f"{tag} ahead {cmp['ahead_by']}, behind {cmp['behind_by']} of {pr['base']}")
+            if by_sol and repo == SWARMS:
+                files = cmp.get("files") or []  # compare lists at most 300 files, so a full list may be cut short
+                changed = sum(f.get("additions", 0) + f.get("deletions", 0) for f in files)
+                small = changed <= SOL_MAX_LINES and len(files) < 300
+                say("PASS" if small else "FAIL", f"{tag} {changed} changed lines in {len(files)} file(s), and Sol approves "
+                    f"up to {SOL_MAX_LINES} lines in under 300 files" + ("" if small else "; Khalil approves this one"))
             if pr.get("commits") and cmp["ahead_by"] != pr["commits"]:
                 say("FAIL", f"{tag} expected {pr['commits']} commit(s) ahead of {pr['base']}, found {cmp['ahead_by']}")
             mine = {f["filename"] for f in cmp.get("files") or []}
@@ -2140,6 +2150,9 @@ def cmd_publish(a):
         missing = [f for f in approved_files(m) if not (task / f).exists()]
         if missing:
             raise SystemExit(f"FAIL missing {', '.join(missing)}")
+        raw = json.loads((task / "publish.json").read_text(encoding="utf-8"))
+        raw["approved_by"] = a.by  # inside the hashed manifest, so `check` knows whose approval it holds
+        (task / "publish.json").write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
         lines = [f"{sha256(task / f)}  {f}" for f in approved_files(m)]
         (task / "approved.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")
         print("\n".join(lines))
@@ -2388,6 +2401,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("task")
     p.add_argument("--on", help="post only on this date (YYYY-MM-DD)")
     p.add_argument("--label-wait", type=int, default=120)
+    p.add_argument("--by", choices=["khalil", "sol"], default="khalil", help="approve: whose approval this is")
     p.add_argument("--branch")
     p.add_argument("--docs-branch")
     for flag in ("--item", "--brief", "--source", "--est"):

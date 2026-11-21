@@ -5,7 +5,7 @@ description: Find today's PR opportunities in kyegomez/swarms, rank them by what
 
 # Swarms picks
 
-Find work likely to merge today, rank it, pick up to three bigger PRs worth a day or more, and write one brief per item that a fresh thread can run with "own it, full stop". Open an issue for each item that has none, so others can see the work. Don't start the work itself.
+Find work likely to merge today, rank it, pick up to three bigger PRs worth a day or more, and write one brief per item that a fresh thread can run with "own it". Open an issue for each item that has none, so others can see the work. Don't start the work itself.
 
 - Read-only on GitHub, except for the issues step 7 opens. No PRs, comments, labels, reviews or pushes.
 - Run no git in the main clones, and edit nothing there except today's files under `tasks/`.
@@ -156,4 +156,4 @@ Fix what the review shows, then open each draft with `python3 $T open-issue <dra
 
 ## 8. When I pick
 
-When I name the items to run, such as "run 1, 3 and 5", run `git fetch upstream master` in the swarms clone, then start one T3 thread per item with `t3_thread_launch`: the swarms project's `projectId`, `workspaceStrategy` set to `{type: "worktree", baseRef: "upstream/master"}`, and the message `Own it, full stop: <brief path>`. Don't use `create_threads`. It has no worktree option, so its threads land in the main clone. Reply with each thread's link.
+When I name the items to run, such as "run 1, 3 and 5", run `git fetch upstream master` in the swarms clone, then start one T3 thread per item with `t3_thread_launch`: the swarms project's `projectId`, `workspaceStrategy` set to `{type: "worktree", baseRef: "upstream/master"}`, and one message. A Shortlist item gets `Own it, full send: <brief path>`, so it posts on Sol's approval. A Big PRs item or a security fix gets `Own it, full stop: <brief path>`, so it waits for mine. When I name a mode for an item, use mine. Don't use `create_threads`. It has no worktree option, so its threads land in the main clone. Reply with each thread's link.

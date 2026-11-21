@@ -1,6 +1,6 @@
 # How I work
 
-I'm Khalil (GitHub `Kpeguero16`). Agents write nearly all of my code, in T3 Code with Claude Code and Codex, on a Mac and a Windows PC. I pick the work and approve anything that goes public in my name. Agents do the rest, and they tell me plainly what they proved and what they didn't.
+I'm Khalil (GitHub `Kpeguero16`). Agents write nearly all of my code, in T3 Code with Claude Code and Codex, on a Mac and a Windows PC. I pick the work and approve what goes public in my name, except small swarms PRs and issues, which go out after a Sol review. Agents do the rest, and they tell me plainly what they proved and what they didn't.
 
 ## Rules
 
@@ -50,7 +50,7 @@ In both clones, `upstream` is the main repo and `origin` is my fork. On another 
 - Every PR has an issue, so people can see what I'm working on. Kye asked for this on 2026-11-20, and in meetings he has asked contributors to open more issues so he isn't the only one. `swarms-picks` opens an issue for each finding that has none, after a Sol review. The docs PR names the issue as `kyegomez/swarms#N`. A security fix gets no public issue. `publish check` fails a framework PR that doesn't close an open issue.
 - End the body with `🤖 Generated with [Claude Code](https://claude.com/claude-code) (<model>)`, naming the model that did the work, and end commits with a matching `Co-Authored-By` trailer. Never remove the 🤖 line.
 - The repo's labeler should add `ai-generated`. When it doesn't, a real wording edit to the body runs it again.
-- Nothing goes public until I've approved the exact title and body. Issues are the one exception. `swarms-picks` and `swarms-own` open them after a Sol review, without asking me.
+- Nothing goes public until I've approved the exact title and body, with two exceptions that a Sol review approves instead. `swarms-picks` and `swarms-own` open issues without asking me. A small PR I pick from the shortlist runs "own it, full send" and posts on Sol's approval: a framework PR of 100 changed lines or fewer that isn't a security fix, which `publish check` enforces. Big PRs and security fixes run "own it, full stop" and wait for me.
 - After a PR is posted, give me its title on one line and the URL on the next, for the Swarm's Python Discord channel. A security PR goes only to "#management or product channel only", never to a public channel.
 
 ### Known noise
@@ -74,8 +74,9 @@ Follow the `verify-swarms` skill. Never import swarms without `SWARMS_TELEMETRY_
 | Say | Skill | Result |
 | --- | --- | --- |
 | "morning status" | `swarms-status` | A verdict for each open PR, in `tasks/pr-status/<date>.md` |
-| "today's picks" | `swarms-picks` | The shortlist, and a brief per item in `tasks/handoffs/<date>/` |
+| "today's picks" | `swarms-picks` | The shortlist, and a brief per item in `tasks/handoffs/<date>/`. Items I pick run full send if small, full stop if big |
 | "own it, full stop" and a brief | `swarms-own` with `full-stop` | Proof, review and PR text, then my approval, then publish and babysit until ready |
+| "own it, full send" and a brief | `swarms-own` with `full-send` | The same, with Sol's approval in place of mine, for a small PR. Never merges |
 | "verify" | `verify-swarms` | Offline proof, red on the base and green on the branch |
 | `/swarms-publish` | `swarms-publish` | Posts approved text, now or at a set time |
 | "swarms prs" | `swarms-prs` | The Discord list of today's PRs |

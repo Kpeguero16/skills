@@ -1,12 +1,12 @@
 ---
 name: swarms-publish
-description: Post swarms PRs whose exact title and body Khalil approved, from a task folder, now or at a scheduled time, after read-only checks. Start it only by name, after approval.
+description: Post swarms PRs whose exact title and body Khalil approved, or Sol approved in a full-send swarms-own run, from a task folder, now or at a scheduled time, after read-only checks. Start it only by name, after approval.
 disable-model-invocation: true
 ---
 
 # Swarms publish
 
-Posts one PR, or a framework PR with its docs PR, whose exact text I approved. Every check before `gh pr create` is read-only, so a failed check posts nothing.
+Posts one PR, or a framework PR with its docs PR, whose exact text I approved, or Sol approved in a full-send `swarms-own` run. Every check before `gh pr create` is read-only, so a failed check posts nothing.
 
 `$T` is `../swarms-tools/scripts/swarms.py`, next to this skill's folder.
 
@@ -20,7 +20,7 @@ Posts one PR, or a framework PR with its docs PR, whose exact text I approved. E
 | `pr_title.txt`, `pr_body.md` | The approved text |
 | `pr_body_relabel.md` | The same body with one real wording change, used once if the `ai-generated` label doesn't appear |
 | `docs_title.txt`, `docs_body.md` | The docs PR's text, when there is one |
-| `approved.sha256` | Written by `publish approve` when I approve |
+| `approved.sha256` | Written by `publish approve` when I approve, or Sol does in full send |
 
 Start it with:
 
@@ -43,8 +43,8 @@ A title or body can name another PR in the folder: `{{framework.url}}`, `{{frame
 
 ## Steps
 
-1. Only after I approve the exact text in this thread: `python3 $T publish approve <task dir>`. It records the hashes of the text and `publish.json`, so any later edit to either fails the checks.
-2. `python3 $T publish check <task dir>`. If fixing a failure changes the text, show me the new text and approve again.
+1. Only after I approve the exact text in this thread: `python3 $T publish approve <task dir>`. In a full-send `swarms-own` run, Sol's APPROVE on the final diff and text is the approval: `python3 $T publish approve <task dir> --by sol`. It records the hashes of the text and `publish.json`, and whose approval it was, so any later edit to either fails the checks. `check` fails Sol's approval for a framework PR over 100 changed lines or one marked security, which wait for mine.
+2. `python3 $T publish check <task dir>`. If fixing a failure changes the text, approve again the way you first did: show me the new text, or in full send, have Sol review the change.
 3. Post now, or schedule it (below). Now: run `python3 $T publish post <task dir>` once, with a 10-minute timeout. It reruns the checks, opens the PRs, waits for the `ai-generated` label and makes the relabel edit once if needed, records the ledger row, and prints the Discord lines.
 4. After `RESULT posted` or `RESULT PARTIAL`, call `link_pull_request` for each URL on an `OPENED` line, as your next call.
 5. Report the `FAIL`, `WARN` and `LABEL` lines, then end with the lines after `DISCORD`, exactly as printed.
