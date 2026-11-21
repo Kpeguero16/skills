@@ -31,7 +31,7 @@ On Windows, write the same `@<path>` line to `%USERPROFILE%\.claude\CLAUDE.md`, 
 | --- | --- | --- |
 | `swarms-status` | Gives each of my open PRs a verdict: wait, nudge, rebase, rework or close. | `gh` |
 | `swarms-picks` | Finds the day's PR opportunities, ranks them by what has merged before, writes a brief for each, and opens an issue for each finding that has none. | `gh`, the Wispr Flow connector |
-| `swarms-own` | Takes one brief from proof to a PR that's ready for the maintainer, stopping once for my approval of the text. | T3 Code, Codex for the review |
+| `swarms-own` | Takes one brief from proof to a PR that's ready for the maintainer. "Full stop" stops once for my approval of the text, and "full send" posts a small PR on Sol's approval. | T3 Code, Codex for the review |
 | `verify-swarms` | Runs swarms code offline and proves a change red on the base and green on the branch. | Local clones, the swarms venv |
 | `swarms-publish` | Posts approved PR text after read-only checks, now or at a scheduled time. | `gh` |
 | `swarms-prs` | Builds the end-of-day Discord message that lists the PRs I opened today. | `gh` |

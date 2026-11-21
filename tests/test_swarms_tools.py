@@ -540,7 +540,7 @@ class PublishFlow(unittest.TestCase):
         self.assertIn("LINKED framework the wording edit filled the links", out)
         self.assertIn("RESULT posted", out)
 
-    def checks(self, on=None):
+    def checks(self, on=None, files=()):
         fake = FakeGh()
         shas = {"feat/x-arun": "a" * 40, "docs/x-arun": "b" * 40}
 
@@ -549,7 +549,7 @@ class PublishFlow(unittest.TestCase):
             if args[0] == "api" and "/git/ref/heads/" in args[1]:
                 return shas[args[1].split("/git/ref/heads/")[1]] + "\n"
             if args[0] == "api" and "/compare/" in args[1]:
-                return {"ahead_by": 1, "behind_by": 0, "files": [], "merge_base_commit": {"sha": "c" * 40}}
+                return {"ahead_by": 1, "behind_by": 0, "files": list(files), "merge_base_commit": {"sha": "c" * 40}}
             if args[:2] == ("pr", "list"):
                 return []
             if args[0] == "api" and "/issues/" in args[1]:
@@ -592,6 +592,18 @@ class PublishFlow(unittest.TestCase):
         swarms.main(["publish", "approve", str(self.task)])
         fails = [line for line in self.checks() if line.startswith("FAIL")]
         self.assertTrue(any("pr_title.txt names docs, which posts after it" in f for f in fails), fails)
+
+    def test_sol_approves_only_a_small_pr_that_isnt_a_security_fix(self):
+        swarms.main(["publish", "approve", str(self.task), "--by", "sol"])
+        fails = lambda n: [line for line in self.checks(files=[{"filename": "x.py", "additions": n, "deletions": 1}]) if line.startswith("FAIL")]
+        self.assertEqual(fails(99), [])
+        self.assertTrue(any("101 changed lines" in f for f in fails(100)), fails(100))
+        self.manifest["security"] = True
+        (self.task / "publish.json").write_text(__import__("json").dumps(self.manifest), encoding="utf-8")
+        swarms.main(["publish", "approve", str(self.task), "--by", "sol"])
+        self.assertTrue(any("Sol approved a security PR" in f for f in fails(9)), fails(9))
+        swarms.main(["publish", "approve", str(self.task)])
+        self.assertEqual(fails(100), [])
 
     def test_checks_fail_without_approval(self):
         fails = [line for line in self.checks() if line.startswith("FAIL")]
