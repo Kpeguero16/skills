@@ -439,7 +439,7 @@ class PublishFlow(unittest.TestCase):
             "pr_body.md": "Closes #1.\n\nDocs: {{docs.url}}\n\n🤖 Generated with Claude Code\n",
             "pr_body_relabel.md": "Closes #1.\n\nDocs PR: {{docs.url}}\n\n🤖 Generated with Claude Code\n",
             "docs_title.txt": "[DOCS][X.arun][Document it (tracks swarms #{{framework.number}})]\n",
-            "docs_body.md": "Tracks {{framework.url}}.\n\n🤖 Generated with Claude Code\n",
+            "docs_body.md": "Tracks {{framework.url}} for kyegomez/swarms#1.\n\n🤖 Generated with Claude Code\n",
         }
         for name, text in files.items():
             (self.task / name).write_text(text, encoding="utf-8")
@@ -552,6 +552,8 @@ class PublishFlow(unittest.TestCase):
                 return {"ahead_by": 1, "behind_by": 0, "files": [], "merge_base_commit": {"sha": "c" * 40}}
             if args[:2] == ("pr", "list"):
                 return []
+            if args[0] == "api" and "/issues/" in args[1]:
+                return {"state": "open"}
             return fake(*args, json_out=json_out, **kwargs)
 
         swarms.gh = answer
@@ -594,6 +596,29 @@ class PublishFlow(unittest.TestCase):
     def test_checks_fail_without_approval(self):
         fails = [line for line in self.checks() if line.startswith("FAIL")]
         self.assertTrue(any("no approved.sha256" in f for f in fails), fails)
+
+    def test_every_pr_needs_an_open_issue_that_the_docs_pr_names(self):
+        swarms.gh = lambda *args, **kwargs: {"state": "closed"}
+        (self.task / "pr_body.md").write_text("Fixes the bug.\n", encoding="utf-8")
+        (self.task / "docs_body.md").write_text("Tracks {{framework.url}}.\n", encoding="utf-8")
+        self.assertEqual(swarms.issue_checks(self.task, self.manifest), [
+            "FAIL [framework] pr_body.md closes no issue: write Closes #N, or Part of #N for one PR of a split",
+            "FAIL #1 is not an open issue", "FAIL [docs] docs_body.md doesn't name kyegomez/swarms#1"])
+        self.assertEqual(swarms.issue_checks(self.task, {**self.manifest, "security": True}), [])
+
+    def test_issue_open_checks_the_draft_and_skips_one_already_open(self):
+        calls, mine = [], []
+        swarms.gh = lambda *args, **kwargs: calls.append(args) or (mine if args[1] == "list" else "https://x/issues/7\n")
+        draft = self.task / "1-x.issue.md"
+        draft.write_text("# [BUG][X.run][Drops img]\n\nSee <the input>.\n", encoding="utf-8")
+        self.assertEqual(swarms.main(["issue", "open", str(draft)]), 1)
+        self.assertEqual(calls, [])
+        draft.write_text("# [BUG][X.run][Drops img]\n\nIt drops img.\n\n🤖 Generated with Claude Code\n", encoding="utf-8")
+        self.assertEqual(swarms.main(["issue", "open", str(draft)]), 0)
+        self.assertEqual(calls[-1][:6], ("issue", "create", "--repo", swarms.SWARMS, "--title", "[BUG][X.run][Drops img]"))
+        mine.append({"title": "[BUG][X.run][Drops img]", "url": "u"})
+        swarms.main(["issue", "open", str(draft)])
+        self.assertEqual([c[1] for c in calls], ["list", "create", "list"])
 
 
 class Scans(unittest.TestCase):

@@ -1332,6 +1332,9 @@ def cleanup(run: Path) -> list[str]:
 
 PLACEHOLDER = re.compile(r"<(?!https?://|!--)(?:[A-Z]|model|url|link|number|date|sha|n|m|[^<>\n]*\s[^<>\n]*)>")
 REF = re.compile(r"\{\{(\w+)\.(url|number)\}\}")
+# Kye asked on 2026-11-20 for an issue behind every PR, so people can see what's being worked on.
+ISSUE_REF = re.compile(r"(?i)\b(?:closes|fixes|resolves|part of)\s+#(\d+)")
+CLAIM = "I'm working on this."
 
 
 def load_manifest(task: Path) -> dict:
@@ -1380,6 +1383,35 @@ def render(text: str, posted: dict[str, dict], pending: str = "(linked in a mome
     return REF.sub(sub, text)
 
 
+def issue_checks(task: Path, m: dict) -> list[str]:
+    """Each framework PR closes an open issue, and each docs PR names it. A security fix gets no public issue."""
+    if m.get("security"):
+        return []
+    lines, numbers = [], set()
+
+    def read(name: str) -> str:
+        return (task / name).read_text(encoding="utf-8") if (task / name).exists() else ""
+
+    for pr in (p for p in m["prs"] if p["repo"] == SWARMS):
+        for name in texts(pr)[1:]:
+            found = ISSUE_REF.search(read(name))
+            if found:
+                numbers.add(int(found.group(1)))
+            else:
+                lines.append(f"FAIL [{pr['id']}] {name} closes no issue: write Closes #N, or Part of #N for one PR of a split")
+    for number in sorted(numbers):
+        try:
+            issue = gh("api", f"repos/{SWARMS}/issues/{number}")
+            ok = issue["state"] == "open" and "pull_request" not in issue
+            lines.append(f"PASS #{number} is an open issue" if ok else f"FAIL #{number} is not an open issue")
+        except GhError as e:
+            lines.append(f"FAIL could not read issue #{number}: {e}")
+    for pr in (p for p in m["prs"] if p["repo"] != SWARMS and numbers):
+        if not any(re.search(rf"kyegomez/swarms(?:#|/issues/){n}\b", read(pr["body"])) for n in numbers):
+            lines.append(f"FAIL [{pr['id']}] {pr['body']} doesn't name kyegomez/swarms#{min(numbers)}")
+    return lines
+
+
 def publish_checks(task: Path, m: dict, on: str | None) -> list[str]:
     lines: list[str] = []
 
@@ -1416,6 +1448,7 @@ def publish_checks(task: Path, m: dict, on: str | None) -> list[str]:
         want = dict(line.split("  ", 1)[::-1] for line in approved.read_text(encoding="utf-8").splitlines() if "  " in line)
         bad = [f for f in approved_files(m) if f not in want or not (task / f).exists() or sha256(task / f) != want[f]]
         say("FAIL" if bad else "PASS", f"approved text changed or missing: {', '.join(bad)}" if bad else "approved text and publish.json unchanged")
+    lines += issue_checks(task, m)
     for pr in m["prs"]:
         repo, (owner, branch) = pr["repo"], pr["head"].split(":", 1)
         fork = f"{owner}/{repo.split('/')[1]}"
@@ -2121,6 +2154,39 @@ def cmd_publish(a):
     return publish_post(task, m, a.label_wait)
 
 
+def cmd_issue(a):
+    if a.action == "claim":
+        number = int(a.target.lstrip("#"))
+        said = any(c["user"]["login"] == USER and CLAIM in (c.get("body") or "")
+                   for c in gh_pages(f"repos/{SWARMS}/issues/{number}/comments"))
+        if not said:
+            gh("issue", "comment", number, "--repo", SWARMS, "--body", CLAIM, json_out=False, tries=1)
+        print(f"{'PASS already said' if said else 'CLAIMED'} https://github.com/{SWARMS}/issues/{number}")
+        return 0
+    # A draft holds the title on its first line, after an optional "# ", then the body.
+    title, _, body = Path(a.target).read_text(encoding="utf-8").partition("\n")
+    title, body = title.removeprefix("# ").strip(), body.strip() + "\n"
+    fails = [] if title.startswith("[") else ["the first line must be the [TYPE][Symbol][Description] title"]
+    holes = sorted(set(PLACEHOLDER.findall(strip_code(f"{title}\n{body}"))))
+    if holes:
+        fails.append(f"still has placeholders: {' '.join(holes)}")
+    if ROBOT_LINE not in body:
+        fails.append(f"has no '{ROBOT_LINE}' line; the repo requires AI disclosure")
+    if fails:
+        print("\n".join(f"FAIL {a.target} {f}" for f in fails))
+        return 1
+    mine = gh("issue", "list", "--repo", SWARMS, "--author", USER, "--state", "open", "--limit", "300",
+              "--json", "title,url") or []
+    same = next((i["url"] for i in mine if i["title"].strip() == title), None)
+    if same:  # a retry after a dropped connection, say
+        print(f"EXISTS {same}")
+        return 0
+    out = gh("issue", "create", "--repo", SWARMS, "--title", title, "--body-file", "-",
+             input=body, json_out=False, tries=1)
+    print(f"OPENED {out.strip().splitlines()[-1]}")
+    return 0
+
+
 def change_under_review(a):
     """The diff of swarms PR a.number, or of a.tree's commits since a.base, and a reader for its files."""
     if a.number:
@@ -2334,6 +2400,11 @@ def build_parser() -> argparse.ArgumentParser:
     for flag in ("--item", "--brief", "--source", "--est"):
         p.add_argument(flag)
     p.set_defaults(func=cmd_publish)
+
+    p = sub.add_parser("issue", help="open an approved issue draft, or say on an issue that I'm working on it")
+    p.add_argument("action", choices=["open", "claim"])
+    p.add_argument("target", help="open: a draft with the title on its first line; claim: an issue number")
+    p.set_defaults(func=cmd_issue)
 
     p = sub.add_parser("test-budget", help="non-blank test lines added, against the larger of 20 and those added under swarms/")
     p.add_argument("number", type=int, nargs="?", help="a swarms PR; or use --tree for a local branch")
