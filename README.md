@@ -30,14 +30,14 @@ On Windows, write the same `@<path>` line to `%USERPROFILE%\.claude\CLAUDE.md`, 
 | Skill | What it does | Requirements |
 | --- | --- | --- |
 | `swarms-status` | Gives each of my open PRs a verdict: wait, nudge, rebase, rework or close. | `gh` |
-| `swarms-picks` | Finds the day's PR opportunities, ranks them by what has merged before, and writes a brief for each. | `gh`, the Wispr Flow connector |
+| `swarms-picks` | Finds the day's PR opportunities, ranks them by what has merged before, writes a brief for each, and opens an issue for each finding that has none. | `gh`, the Wispr Flow connector |
 | `swarms-own` | Takes one brief from proof to a PR that's ready for the maintainer, stopping once for my approval of the text. | T3 Code, Codex for the review |
 | `verify-swarms` | Runs swarms code offline and proves a change red on the base and green on the branch. | Local clones, the swarms venv |
 | `swarms-publish` | Posts approved PR text after read-only checks, now or at a scheduled time. | `gh` |
 | `swarms-prs` | Builds the end-of-day Discord message that lists the PRs I opened today. | `gh` |
 | `swarms-standup` | Writes standup notes for each PR I opened today. A fresh agent explains each PR and runs the code to back it up. | Anthropic models only, because it runs its subagents through Claude Code. `gh`, local clones. |
 | `swarms-retro` | Proposes up to three changes a week to these skills, from the outcomes ledger and the week's transcripts. | `gh` |
-| `swarms-tools` | The shared CLI: PR facts, worktrees, proof runs, code scans, the outcomes ledger and publishing. | Python 3.10+, `gh` |
+| `swarms-tools` | The shared CLI: PR facts, worktrees, proof runs, code scans, the outcomes ledger, issues and publishing. | Python 3.10+, `gh` |
 | `full-stop` | Takes a change to a PR that's ready to merge, without merging. | `gh` |
 | `full-send` | The same, and merges. For repos I can merge in. | `gh` |
 | `sol-loop` | Reviews a change with GPT Sol in a loop, up to three rounds. | T3 Code or another way to run Sol |

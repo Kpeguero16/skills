@@ -1332,6 +1332,8 @@ def cleanup(run: Path) -> list[str]:
 
 PLACEHOLDER = re.compile(r"<(?!https?://|!--)(?:[A-Z]|model|url|link|number|date|sha|n|m|[^<>\n]*\s[^<>\n]*)>")
 REF = re.compile(r"\{\{(\w+)\.(url|number)\}\}")
+# Kye asked on 2026-11-20 for an issue behind every PR, so people can see what's being worked on.
+ISSUE_REF = re.compile(r"(?i)\b(?:closes|fixes|resolves|part of)\s+#(\d+)")
 
 
 def load_manifest(task: Path) -> dict:
@@ -1380,6 +1382,37 @@ def render(text: str, posted: dict[str, dict], pending: str = "(linked in a mome
     return REF.sub(sub, text)
 
 
+def issue_checks(task: Path, m: dict) -> list[str]:
+    """Each framework PR closes an open issue, and each docs PR names it. A security fix gets no public issue."""
+    if m.get("security"):
+        return []
+    lines, numbers = [], set()
+
+    def read(name: str) -> str:
+        return (task / name).read_text(encoding="utf-8") if (task / name).exists() else ""
+
+    for pr in (p for p in m["prs"] if p["repo"] == SWARMS):
+        for name in texts(pr)[1:]:
+            found = ISSUE_REF.search(strip_code(read(name)))
+            if found:
+                numbers.add(int(found.group(1)))
+            else:
+                lines.append(f"FAIL [{pr['id']}] {name} closes no issue: write Closes #N, or Part of #N for one PR of a split")
+    if len(numbers) > 1:
+        return lines + [f"FAIL the framework bodies close different issues: {', '.join(f'#{n}' for n in sorted(numbers))}"]
+    for number in numbers:
+        try:
+            issue = gh("api", f"repos/{SWARMS}/issues/{number}")
+            ok = issue["state"] == "open" and "pull_request" not in issue
+            lines.append(f"PASS #{number} is an open issue" if ok else f"FAIL #{number} is not an open issue")
+        except GhError as e:
+            lines.append(f"FAIL could not read issue #{number}: {e}")
+        for pr in (p for p in m["prs"] if p["repo"] != SWARMS):
+            if not re.search(rf"kyegomez/swarms(?:#|/issues/){number}\b", read(pr["body"])):
+                lines.append(f"FAIL [{pr['id']}] {pr['body']} doesn't name kyegomez/swarms#{number}")
+    return lines
+
+
 def publish_checks(task: Path, m: dict, on: str | None) -> list[str]:
     lines: list[str] = []
 
@@ -1416,6 +1449,7 @@ def publish_checks(task: Path, m: dict, on: str | None) -> list[str]:
         want = dict(line.split("  ", 1)[::-1] for line in approved.read_text(encoding="utf-8").splitlines() if "  " in line)
         bad = [f for f in approved_files(m) if f not in want or not (task / f).exists() or sha256(task / f) != want[f]]
         say("FAIL" if bad else "PASS", f"approved text changed or missing: {', '.join(bad)}" if bad else "approved text and publish.json unchanged")
+    lines += issue_checks(task, m)
     for pr in m["prs"]:
         repo, (owner, branch) = pr["repo"], pr["head"].split(":", 1)
         fork = f"{owner}/{repo.split('/')[1]}"
@@ -2121,6 +2155,31 @@ def cmd_publish(a):
     return publish_post(task, m, a.label_wait)
 
 
+def cmd_open_issue(a):
+    # A draft holds the title on its first line, after an optional "# ", then the body.
+    title, _, body = Path(a.draft).read_text(encoding="utf-8").partition("\n")
+    title, body = title.removeprefix("# ").strip(), body.strip() + "\n"
+    fails = [] if title.startswith("[") else ["the first line must be the [TYPE][Symbol][Description] title"]
+    holes = sorted(set(PLACEHOLDER.findall(strip_code(f"{title}\n{body}"))))
+    if holes:
+        fails.append(f"still has placeholders: {' '.join(holes)}")
+    if not any(line.startswith(ROBOT_LINE) for line in body.splitlines()):
+        fails.append(f"has no '{ROBOT_LINE}' line; the repo requires AI disclosure")
+    if fails:
+        print("\n".join(f"FAIL {a.draft} {f}" for f in fails))
+        return 1
+    mine = gh("issue", "list", "--repo", SWARMS, "--author", USER, "--state", "open", "--limit", "300",
+              "--json", "title,url") or []
+    same = next((i["url"] for i in mine if i["title"].strip() == title), None)
+    if same:  # a retry after a dropped connection, say
+        print(f"EXISTS {same}")
+        return 0
+    out = gh("issue", "create", "--repo", SWARMS, "--title", title, "--body-file", "-",
+             input=body, json_out=False, tries=1)
+    print(f"OPENED {out.strip().splitlines()[-1]}")
+    return 0
+
+
 def change_under_review(a):
     """The diff of swarms PR a.number, or of a.tree's commits since a.base, and a reader for its files."""
     if a.number:
@@ -2335,6 +2394,10 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument(flag)
     p.set_defaults(func=cmd_publish)
 
+    p = sub.add_parser("open-issue", help="open a swarms issue from a draft, unless I have an open one with its title")
+    p.add_argument("draft", help="the title on the first line, then the body")
+    p.set_defaults(func=cmd_open_issue)
+
     p = sub.add_parser("test-budget", help="non-blank test lines added, against the larger of 20 and those added under swarms/")
     p.add_argument("number", type=int, nargs="?", help="a swarms PR; or use --tree for a local branch")
     p.add_argument("--tree", help="a worktree whose commits since --base to count")
@@ -2366,6 +2429,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    for stream in (sys.stdout, sys.stderr):  # a cp1252 Windows console can't print the robot in a FAIL line
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     a = build_parser().parse_args(argv)
     if getattr(a, "cmd", None) and a.cmd[:1] == ["--"]:
         a.cmd = a.cmd[1:]

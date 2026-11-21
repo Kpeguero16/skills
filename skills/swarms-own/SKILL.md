@@ -11,11 +11,11 @@ Read `../full-stop/SKILL.md` and `../full-send/SKILL.md`, next to this skill's f
 
 ## Steps
 
-1. **Restate.** Read the brief. In two or three sentences, give the goal and the smallest change that meets it, before any edit. If master moved, find the code with grep rather than the brief's line numbers. Run `python3 $T competition <issue> <symbol>`, and say so if someone has opened a PR since the brief was written.
+1. **Restate.** Read the brief. In two or three sentences, give the goal and the smallest change that meets it, before any edit. If master moved, find the code with grep rather than the brief's line numbers. Run `python3 $T competition <issue> <symbol>`, and say so if someone has opened a PR since the brief was written. The brief names the item's issue. When it names none, write a draft as `swarms-picks` step 6 describes, review it with Sol as `swarms-picks` step 7 does, and open it with `python3 $T open-issue <draft>` before step 2. Don't ask me first. A security fix gets no issue.
 2. **Prove the problem on master** with `verify-swarms`, before changing anything: a failing test or repro in a base tree. Write the test you'll ship short from the start, as "Tests" below says. For a deletion, prove the fact that makes it safe with `python3 $T scan <name> --tree <base tree> --docs <docs tree>`.
 3. **Make the smallest change** in this worktree. Show the same check red on the base and green here with `python3 $T prove`. A deletion has nothing to turn red: run the module's tests on both trees and show the pass and fail sets match, as `verify-swarms` describes. Save the evidence in `tasks/<slug>/evidence/`. Run black and ruff on the changed files. Commit with the co-author trailer, then run `python3 $T test-budget --tree .` and `python3 $T style --tree .`. `style` checks the lines you added against Kye's written style rules; fix each line it names, then commit and run it again.
 4. **Review with `sol-loop`**: at most three rounds, each finding marked blocker, should or nit, stopping when only nits remain. A finding counts only if rerunning its command, or a repro you write for it, shows the failure. Decline the rest with that evidence. Don't push during the loop.
-5. **Write the PR text** in `tasks/<slug>/`: `pr_title.txt`, `pr_body.md`, and `pr_body_relabel.md` (the same body with one real wording change). Use `file-pr`'s problem-first body, add the before-and-after evidence, and say whether the change is a one-way or two-way door. A docs PR also gets `docs_title.txt` and `docs_body.md`. Apply `unslop`, then `python3 $T lint <files>`.
+5. **Write the PR text** in `tasks/<slug>/`: `pr_title.txt`, `pr_body.md`, and `pr_body_relabel.md` (the same body with one real wording change). Use `file-pr`'s problem-first body, add the before-and-after evidence, and say whether the change is a one-way or two-way door. The body closes the issue with `Closes #N`, or says `Part of #N` for one PR of a split big PR. A docs PR also gets `docs_title.txt` and `docs_body.md`, which names the issue as `kyegomez/swarms#N`. A security fix has no issue to name: set `"security": true` in `publish.json` after step 6's `publish init`. Apply `unslop`, then `python3 $T lint <files>`.
 6. **Push** to my fork with `git push origin HEAD:refs/heads/<branch>`, without renaming the worktree's branch. Then run `publish init` and fill in the competition terms, as `swarms-publish` describes.
 7. **Ask me** with the harness's question tool. Put the full title and body in the question, with the proof in one line and the `test-budget` and `style` lines, and offer: approve and post now, approve and post at a time I give, or change something. A question in a normal reply looks like a finished thread and gets missed.
 8. **Publish** after approval. Read `../swarms-publish/SKILL.md` and follow it, starting with `publish approve`.
@@ -44,7 +44,7 @@ Only when:
 
 Decide everything else and list the decisions in the report.
 
-When an item is dropped, write the reason and the evidence to `tasks/<slug>/DROPPED.md`, so `swarms-picks` doesn't list it again.
+When an item is dropped, write the reason and the evidence to `tasks/<slug>/DROPPED.md`, so `swarms-picks` doesn't list it again. When the finding behind its issue was wrong, the question that tells me about the drop also offers closing the issue with the reason. Close it only after I say so.
 
 ## Report
 
