@@ -2427,6 +2427,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    for stream in (sys.stdout, sys.stderr):  # a cp1252 Windows console can't print the robot in a FAIL line
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     a = build_parser().parse_args(argv)
     if getattr(a, "cmd", None) and a.cmd[:1] == ["--"]:
         a.cmd = a.cmd[1:]
