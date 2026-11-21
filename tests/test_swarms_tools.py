@@ -601,9 +601,13 @@ class PublishFlow(unittest.TestCase):
         self.manifest["security"] = True
         (self.task / "publish.json").write_text(__import__("json").dumps(self.manifest), encoding="utf-8")
         swarms.main(["publish", "approve", str(self.task), "--by", "sol"])
-        self.assertTrue(any("Sol approved a security PR" in f for f in fails(9)), fails(9))
+        self.assertTrue(any("Sol approves only a framework PR" in f for f in fails(9)), fails(9))
         swarms.main(["publish", "approve", str(self.task)])
         self.assertEqual(fails(100), [])
+        self.manifest.update(security=False, prs=self.manifest["prs"][1:])  # a docs PR alone
+        (self.task / "publish.json").write_text(__import__("json").dumps(self.manifest), encoding="utf-8")
+        swarms.main(["publish", "approve", str(self.task), "--by", "sol"])
+        self.assertTrue(any("Sol approves only a framework PR" in f for f in fails(9)), fails(9))
 
     def test_checks_fail_without_approval(self):
         fails = [line for line in self.checks() if line.startswith("FAIL")]

@@ -1451,8 +1451,8 @@ def publish_checks(task: Path, m: dict, on: str | None) -> list[str]:
         bad = [f for f in approved_files(m) if f not in want or not (task / f).exists() or sha256(task / f) != want[f]]
         say("FAIL" if bad else "PASS", f"approved text changed or missing: {', '.join(bad)}" if bad else "approved text and publish.json unchanged")
     by_sol = m.get("approved_by") == "sol"
-    if by_sol and m.get("security"):
-        say("FAIL", "Sol approved a security PR; Khalil approves those: run `publish approve` after he does")
+    if by_sol and (m.get("security") or all(pr["repo"] != SWARMS for pr in m["prs"])):
+        say("FAIL", "Sol approves only a framework PR that isn't a security fix; run `publish approve` after Khalil does")
     lines += issue_checks(task, m)
     for pr in m["prs"]:
         repo, (owner, branch) = pr["repo"], pr["head"].split(":", 1)
