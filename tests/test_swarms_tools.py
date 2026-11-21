@@ -599,11 +599,13 @@ class PublishFlow(unittest.TestCase):
 
     def test_every_pr_needs_an_open_issue_that_the_docs_pr_names(self):
         swarms.gh = lambda *args, **kwargs: {"state": "closed"}
-        (self.task / "pr_body.md").write_text("Fixes the bug.\n", encoding="utf-8")
+        (self.task / "pr_body.md").write_text("Fixes the bug, as `Closes #1` would say.\n", encoding="utf-8")
         (self.task / "docs_body.md").write_text("Tracks {{framework.url}}.\n", encoding="utf-8")
         self.assertEqual(swarms.issue_checks(self.task, self.manifest), [
             "FAIL [framework] pr_body.md closes no issue: write Closes #N, or Part of #N for one PR of a split",
             "FAIL #1 is not an open issue", "FAIL [docs] docs_body.md doesn't name kyegomez/swarms#1"])
+        (self.task / "pr_body.md").write_text("Closes #2.\n", encoding="utf-8")
+        self.assertEqual(swarms.issue_checks(self.task, self.manifest), ["FAIL the framework bodies close different issues: #1, #2"])
         self.assertEqual(swarms.issue_checks(self.task, {**self.manifest, "security": True}), [])
 
     def test_issue_open_checks_the_draft_and_skips_one_already_open(self):

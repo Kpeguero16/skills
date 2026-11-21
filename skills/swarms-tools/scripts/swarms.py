@@ -1393,21 +1393,23 @@ def issue_checks(task: Path, m: dict) -> list[str]:
 
     for pr in (p for p in m["prs"] if p["repo"] == SWARMS):
         for name in texts(pr)[1:]:
-            found = ISSUE_REF.search(read(name))
+            found = ISSUE_REF.search(strip_code(read(name)))
             if found:
                 numbers.add(int(found.group(1)))
             else:
                 lines.append(f"FAIL [{pr['id']}] {name} closes no issue: write Closes #N, or Part of #N for one PR of a split")
-    for number in sorted(numbers):
+    if len(numbers) > 1:
+        return lines + [f"FAIL the framework bodies close different issues: {', '.join(f'#{n}' for n in sorted(numbers))}"]
+    for number in numbers:
         try:
             issue = gh("api", f"repos/{SWARMS}/issues/{number}")
             ok = issue["state"] == "open" and "pull_request" not in issue
             lines.append(f"PASS #{number} is an open issue" if ok else f"FAIL #{number} is not an open issue")
         except GhError as e:
             lines.append(f"FAIL could not read issue #{number}: {e}")
-    for pr in (p for p in m["prs"] if p["repo"] != SWARMS and numbers):
-        if not any(re.search(rf"kyegomez/swarms(?:#|/issues/){n}\b", read(pr["body"])) for n in numbers):
-            lines.append(f"FAIL [{pr['id']}] {pr['body']} doesn't name kyegomez/swarms#{min(numbers)}")
+        for pr in (p for p in m["prs"] if p["repo"] != SWARMS):
+            if not re.search(rf"kyegomez/swarms(?:#|/issues/){number}\b", read(pr["body"])):
+                lines.append(f"FAIL [{pr['id']}] {pr['body']} doesn't name kyegomez/swarms#{number}")
     return lines
 
 

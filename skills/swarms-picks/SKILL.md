@@ -61,7 +61,7 @@ i) **Bugs found by running.** Pick one or two pure functions in today's area, or
 
 1. The report, to `<tasks>/daily-opportunities/<date>.md`.
 2. One brief per item in the Shortlist and Big PRs sections, to `<tasks>/handoffs/<date>/<N>-<slug>.md`.
-3. One issue draft per item that no open issue covers, to `<tasks>/handoffs/<date>/<N>-<slug>.issue.md`. Search first with `gh issue list --repo kyegomez/swarms --state open --search "<symbol>"`. An item that came from an issue, or that an open issue already covers, uses that issue and gets no draft. A repeat item keeps the issue from its first listing. A security finding gets no draft, because a public issue would disclose it before the fix. The draft's first line is the title, `[BUG|PERF|CHORE|FEAT][Symbol][What's wrong]`, as in #3584 or #3552. The body follows Kye's issues: the problem as a user sees it, the evidence (file:line, the input, what comes back and what should), and the cause. End it with the 🤖 line naming your model, then run `python3 $T lint` on the drafts. Opening an issue doesn't change the item's ledger source.
+3. One issue draft per item that no open issue covers, to `<tasks>/handoffs/<date>/<N>-<slug>.issue.md`. Search first with `gh issue list --repo kyegomez/swarms --state open --search "<symbol>"`. An item that came from an issue, or that an open issue already covers, uses that issue and gets no draft. A repeat item keeps the issue from its first listing while that issue is open. A security finding gets no draft, because a public issue would disclose it before the fix. The draft's first line is the title, `[BUG|PERF|CHORE|FEAT][Symbol][What's wrong]`, as in #3584 or #3552. The body follows Kye's issues: the problem as a user sees it, the evidence (file:line, the input, what comes back and what should), and the cause. End it with the 🤖 line naming your model, then run `python3 $T lint` on the drafts. Opening an issue doesn't change the item's ledger source.
 4. One ledger row per item: `python3 $T ledger add --item "<title>" --source "<source>" --est <lines> --brief <brief path>`. The source is one of `issue #N`, `meeting YYYY-MM-DD`, `bounty`, `kye request`, `bug found by reading`, `bug found by running`, `deletion`, `lint lead`, `sibling of #N` or `style rule`.
 5. Review and open the drafts as step 7 says, before you remove the snapshot.
 6. Remove the snapshot folder.
@@ -138,7 +138,7 @@ The check that should fail on master and pass on the branch, or for a deletion, 
 
 ## 7. Issues
 
-Kye wants an issue behind every PR, so people can see what's being worked on, and he wants contributors other than him to open them. Open the drafts without asking me, after one Sol review of all of them together. Follow `sol-loop` for the budget, the severities and the rounds, with this round 1 brief in place of its own:
+Kye wants an issue behind every PR, so people can see what's being worked on, and he wants contributors other than him to open them. Open the drafts without asking me, after Sol reviews them. Send all of the drafts to one reviewer together, not one review per draft, and follow `sol-loop` for the rounds, the budget and the severities, with this round 1 brief in place of its own:
 
 ```
 Review only. Do not edit, comment, open issues or start subagents.
