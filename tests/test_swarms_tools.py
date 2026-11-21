@@ -614,6 +614,8 @@ class PublishFlow(unittest.TestCase):
         draft = self.task / "1-x.issue.md"
         draft.write_text("# [BUG][X.run][Drops img]\n\nSee <the input>.\n", encoding="utf-8")
         self.assertEqual(swarms.main(["open-issue", str(draft)]), 1)
+        draft.write_text("# [BUG][X.run][Drops img]\n\nIt needs a 🤖 Generated with line.\n", encoding="utf-8")
+        self.assertEqual(swarms.main(["open-issue", str(draft)]), 1)
         self.assertEqual(calls, [])
         draft.write_text("# [BUG][X.run][Drops img]\n\nIt drops img.\n\n🤖 Generated with Claude Code\n", encoding="utf-8")
         self.assertEqual(swarms.main(["open-issue", str(draft)]), 0)

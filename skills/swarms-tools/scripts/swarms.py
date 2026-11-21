@@ -2163,7 +2163,7 @@ def cmd_open_issue(a):
     holes = sorted(set(PLACEHOLDER.findall(strip_code(f"{title}\n{body}"))))
     if holes:
         fails.append(f"still has placeholders: {' '.join(holes)}")
-    if ROBOT_LINE not in body:
+    if not any(line.startswith(ROBOT_LINE) for line in body.splitlines()):
         fails.append(f"has no '{ROBOT_LINE}' line; the repo requires AI disclosure")
     if fails:
         print("\n".join(f"FAIL {a.draft} {f}" for f in fails))
