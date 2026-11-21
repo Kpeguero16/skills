@@ -11,7 +11,7 @@ Read `../full-stop/SKILL.md` and `../full-send/SKILL.md`, next to this skill's f
 
 ## Steps
 
-1. **Restate.** Read the brief. In two or three sentences, give the goal and the smallest change that meets it, before any edit. If master moved, find the code with grep rather than the brief's line numbers. Run `python3 $T competition <issue> <symbol>`, and say so if someone has opened a PR since the brief was written. The brief names the item's issue. When it names only a draft, or nothing, show me the draft (write one as `swarms-picks` step 6 describes if there's none) with the question tool. Once I approve, open it with `python3 $T issue open <draft>` and run `python3 $T issue claim <issue number>` before step 2. A security fix gets no issue.
+1. **Restate.** Read the brief. In two or three sentences, give the goal and the smallest change that meets it, before any edit. If master moved, find the code with grep rather than the brief's line numbers. Run `python3 $T competition <issue> <symbol>`, and say so if someone has opened a PR since the brief was written. The brief names the item's issue. When it names none, write a draft as `swarms-picks` step 6 describes, review it with Sol as `swarms-picks` step 7 does, and open it with `python3 $T open-issue <draft>` before step 2. Don't ask me first. A security fix gets no issue.
 2. **Prove the problem on master** with `verify-swarms`, before changing anything: a failing test or repro in a base tree. Write the test you'll ship short from the start, as "Tests" below says. For a deletion, prove the fact that makes it safe with `python3 $T scan <name> --tree <base tree> --docs <docs tree>`.
 3. **Make the smallest change** in this worktree. Show the same check red on the base and green here with `python3 $T prove`. A deletion has nothing to turn red: run the module's tests on both trees and show the pass and fail sets match, as `verify-swarms` describes. Save the evidence in `tasks/<slug>/evidence/`. Run black and ruff on the changed files. Commit with the co-author trailer, then run `python3 $T test-budget --tree .` and `python3 $T style --tree .`. `style` checks the lines you added against Kye's written style rules; fix each line it names, then commit and run it again.
 4. **Review with `sol-loop`**: at most three rounds, each finding marked blocker, should or nit, stopping when only nits remain. A finding counts only if rerunning its command, or a repro you write for it, shows the failure. Decline the rest with that evidence. Don't push during the loop.
@@ -44,7 +44,7 @@ Only when:
 
 Decide everything else and list the decisions in the report.
 
-When an item is dropped, write the reason and the evidence to `tasks/<slug>/DROPPED.md`, so `swarms-picks` doesn't list it again. Its issue still says I'm working on it, so the question that tells me about the drop also offers a short comment on the issue with the reason, or closing the issue when the finding was wrong. Post either one only after I approve it.
+When an item is dropped, write the reason and the evidence to `tasks/<slug>/DROPPED.md`, so `swarms-picks` doesn't list it again. When the finding behind its issue was wrong, the question that tells me about the drop also offers closing the issue with the reason. Close it only after I say so.
 
 ## Report
 

@@ -1334,7 +1334,6 @@ PLACEHOLDER = re.compile(r"<(?!https?://|!--)(?:[A-Z]|model|url|link|number|date
 REF = re.compile(r"\{\{(\w+)\.(url|number)\}\}")
 # Kye asked on 2026-11-20 for an issue behind every PR, so people can see what's being worked on.
 ISSUE_REF = re.compile(r"(?i)\b(?:closes|fixes|resolves|part of)\s+#(\d+)")
-CLAIM = "I'm working on this."
 
 
 def load_manifest(task: Path) -> dict:
@@ -2154,17 +2153,9 @@ def cmd_publish(a):
     return publish_post(task, m, a.label_wait)
 
 
-def cmd_issue(a):
-    if a.action == "claim":
-        number = int(a.target.lstrip("#"))
-        said = any(c["user"]["login"] == USER and CLAIM in (c.get("body") or "")
-                   for c in gh_pages(f"repos/{SWARMS}/issues/{number}/comments"))
-        if not said:
-            gh("issue", "comment", number, "--repo", SWARMS, "--body", CLAIM, json_out=False, tries=1)
-        print(f"{'PASS already said' if said else 'CLAIMED'} https://github.com/{SWARMS}/issues/{number}")
-        return 0
+def cmd_open_issue(a):
     # A draft holds the title on its first line, after an optional "# ", then the body.
-    title, _, body = Path(a.target).read_text(encoding="utf-8").partition("\n")
+    title, _, body = Path(a.draft).read_text(encoding="utf-8").partition("\n")
     title, body = title.removeprefix("# ").strip(), body.strip() + "\n"
     fails = [] if title.startswith("[") else ["the first line must be the [TYPE][Symbol][Description] title"]
     holes = sorted(set(PLACEHOLDER.findall(strip_code(f"{title}\n{body}"))))
@@ -2173,7 +2164,7 @@ def cmd_issue(a):
     if ROBOT_LINE not in body:
         fails.append(f"has no '{ROBOT_LINE}' line; the repo requires AI disclosure")
     if fails:
-        print("\n".join(f"FAIL {a.target} {f}" for f in fails))
+        print("\n".join(f"FAIL {a.draft} {f}" for f in fails))
         return 1
     mine = gh("issue", "list", "--repo", SWARMS, "--author", USER, "--state", "open", "--limit", "300",
               "--json", "title,url") or []
@@ -2401,10 +2392,9 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument(flag)
     p.set_defaults(func=cmd_publish)
 
-    p = sub.add_parser("issue", help="open an approved issue draft, or say on an issue that I'm working on it")
-    p.add_argument("action", choices=["open", "claim"])
-    p.add_argument("target", help="open: a draft with the title on its first line; claim: an issue number")
-    p.set_defaults(func=cmd_issue)
+    p = sub.add_parser("open-issue", help="open a swarms issue from a draft, unless I have an open one with its title")
+    p.add_argument("draft", help="the title on the first line, then the body")
+    p.set_defaults(func=cmd_open_issue)
 
     p = sub.add_parser("test-budget", help="non-blank test lines added, against the larger of 20 and those added under swarms/")
     p.add_argument("number", type=int, nargs="?", help="a swarms PR; or use --tree for a local branch")

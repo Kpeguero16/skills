@@ -611,13 +611,13 @@ class PublishFlow(unittest.TestCase):
         swarms.gh = lambda *args, **kwargs: calls.append(args) or (mine if args[1] == "list" else "https://x/issues/7\n")
         draft = self.task / "1-x.issue.md"
         draft.write_text("# [BUG][X.run][Drops img]\n\nSee <the input>.\n", encoding="utf-8")
-        self.assertEqual(swarms.main(["issue", "open", str(draft)]), 1)
+        self.assertEqual(swarms.main(["open-issue", str(draft)]), 1)
         self.assertEqual(calls, [])
         draft.write_text("# [BUG][X.run][Drops img]\n\nIt drops img.\n\n🤖 Generated with Claude Code\n", encoding="utf-8")
-        self.assertEqual(swarms.main(["issue", "open", str(draft)]), 0)
+        self.assertEqual(swarms.main(["open-issue", str(draft)]), 0)
         self.assertEqual(calls[-1][:6], ("issue", "create", "--repo", swarms.SWARMS, "--title", "[BUG][X.run][Drops img]"))
         mine.append({"title": "[BUG][X.run][Drops img]", "url": "u"})
-        swarms.main(["issue", "open", str(draft)])
+        swarms.main(["open-issue", str(draft)])
         self.assertEqual([c[1] for c in calls], ["list", "create", "list"])
 
 

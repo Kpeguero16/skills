@@ -33,7 +33,7 @@ Run it as `python3 <this folder>/scripts/swarms.py <command>`, or `py -3 ...` on
 | `competition TERM... [--removed REGEX] [--allow N...]` | PRs that mention the terms, and whether each removes the same lines. |
 | `ledger sync`, `ledger add`, `ledger stats` | The outcomes ledger at `tasks/daily-opportunities/outcomes.tsv`. `add` fails for an item whose task folder holds a `DROPPED.md`. `sync` fills the `later` column for a merged PR that Kye reverted, or whose added lines someone else's fix removed within 14 days, and `stats` counts them. |
 | `publish init`, `approve`, `check`, `post` | The publish flow. See the `swarms-publish` skill. |
-| `issue open DRAFT`, `issue claim N` | `open` opens a swarms issue from a draft whose first line is the title. It refuses a placeholder or a missing 🤖 line, and prints `EXISTS` with the URL when Khalil already has an open issue with that title. `claim` comments "I'm working on this." on issue N unless Khalil's account already said so there. Both post to GitHub, so run them only on text Khalil approved. |
+| `open-issue DRAFT` | Opens a swarms issue from a draft whose first line is the title. It refuses a placeholder or a missing 🤖 line. When Khalil already has an open issue with that title, it prints `EXISTS` with the URL and opens nothing, so a retry can't post twice. |
 | `lint FILE... [--discord]` | Em dashes, curly quotes and unslop's rule 7 words. `--discord` adds the 2,000-character limit. |
 | `transcripts [--days 7] [--match swarms] [--json F] [--add F...]` | Claude and Codex sessions from the last N days, the ones with the most errors first. `--json` saves them for another machine (`-` prints them), and `--add` reads what another machine saved, so one retro covers both. |
 
