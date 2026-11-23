@@ -254,6 +254,17 @@ class Checks(unittest.TestCase):
                 self.assertEqual(got, code, lines)
                 self.assertTrue(any(l.startswith(line) for l in lines), lines)
 
+    def test_ci_wait_reports_once_the_running_jobs_finish(self):
+        import contextlib
+        import io
+        rollups = iter([[{"name": "build", "status": "IN_PROGRESS"}]] + [[{"name": "build", "status": "COMPLETED", "conclusion": "SUCCESS"}]] * 2)
+        fake = lambda *args, **kwargs: {"headRefOid": "h" * 40, "statusCheckRollup": next(rollups)}
+        out = io.StringIO()
+        with mock.patch.object(swarms, "gh", fake), mock.patch.object(swarms.time, "sleep") as sleep, contextlib.redirect_stdout(out):
+            self.assertEqual(swarms.main(["ci", "7", "--wait"]), 0)
+        self.assertEqual(sleep.call_count, 1)
+        self.assertIn("RESULT clean", out.getvalue())
+
     def test_bots(self):
         self.assertTrue(swarms.is_bot("coderabbitai[bot]"))
         self.assertTrue(swarms.is_bot("github-actions"))
