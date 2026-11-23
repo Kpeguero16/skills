@@ -37,7 +37,7 @@ python3 $T publish init <task dir> --branch <branch> [--docs-branch <branch>] \
 
 Without `removed`, a PR mentioning the terms blocks the post only if it was opened after the approval, since nobody has judged it yet.
 
-Optional fields per PR: `"drift": "warn"` when the PR's files change often on master and it merges cleanly around them (the default, `fail`, asks for a rebase); `"commits": 1` to require an exact commit count; `"base_counts": [{"path": ..., "needle": ..., "count": ...}]` to check that master still has what the PR changes. At the top level, `"security": true` marks a security PR, which needs no issue. Any other framework PR fails the checks when a body doesn't close an open issue, and its docs PR fails when the body doesn't name that issue as `kyegomez/swarms#N`.
+Optional fields per PR: `"drift": "warn"` when the PR's files change often on master and it merges cleanly around them (the default, `fail`, asks for a rebase); `"commits": 1` to require an exact commit count; `"base_counts": [{"path": ..., "needle": ..., "count": ...}]` to check that master still has what the PR changes; `"copies_allow": ["name"]` for a function that should share its name with one in another file, which `check` otherwise fails as a copy (see `copies` in `swarms-tools`). At the top level, `"security": true` marks a security PR, which needs no issue. Any other framework PR fails the checks when a body doesn't close an open issue, and its docs PR fails when the body doesn't name that issue as `kyegomez/swarms#N`.
 
 A title or body can name another PR in the folder: `{{framework.url}}`, `{{framework.number}}`, `{{docs.url}}`. A reference to an earlier PR is filled in when the PR is posted. A body that names a later PR gets the link in an edit right after.
 

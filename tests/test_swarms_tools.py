@@ -81,6 +81,26 @@ class Titles(unittest.TestCase):
         self.assertEqual(swarms.budget_for(swarms.diff_files(diff)), (1, 2, 20))
         self.assertEqual(swarms.budget_for([("swarms/a.py", 108), ("tests/t.py", 57)]), (108, 57, 108))
 
+    def test_copies_finds_a_function_the_base_or_another_open_pr_already_has(self):
+        diff = ("diff --git a/swarms/structs/a.py b/swarms/structs/a.py\n@@ -1,2 +1,5 @@\n-    def _old(self):\n"
+                "+    def _old(self, x):\n+    def _require_unique(self):\n+    def run(self):\n+    def __init__(self):\n"
+                "diff --git a/swarms/structs/f.py b/swarms/structs/f.py\n@@ -1 +1 @@\n-def run():\n+def run(x):\n"
+                "diff --git a/swarms/structs/d.py b/swarms/structs/d.py\n@@ -1 +1 @@\n-def _moved():\n+    def _old(self):\n"
+                "diff --git a/swarms/structs/e.py b/swarms/structs/e.py\n@@ -0,0 +1 @@\n+def _moved():\n"
+                "diff --git a/tests/t.py b/tests/t.py\n@@ -0,0 +1 @@\n+def _require_unique():\n")
+        added = swarms.added_defs(diff)
+        self.assertEqual(added, {"_require_unique": {"files": {"swarms/structs/a.py"}, "helper": True},
+                                 "_old": {"files": {"swarms/structs/d.py"}, "helper": True},
+                                 "run": {"files": {"swarms/structs/a.py"}, "helper": False}})
+        base = {"_require_unique": {"swarms/structs/b.py"}, "run": {"swarms/structs/b.py"}}
+        prs = {7: {"run": {"swarms/structs/c.py"}, "_require_unique": {"swarms/structs/a.py"}}}
+        self.assertEqual(swarms.copy_findings(added, base, prs), [
+            "_require_unique is added in swarms/structs/a.py, and the base already defines it in swarms/structs/b.py",
+            "run is added in swarms/structs/a.py, and my open PR #7 adds it in swarms/structs/c.py"])
+        grep = "up/master:swarms/structs/b.py:    def _require_unique(self) -> None:\nup/master:swarms/x.md:def run("
+        with mock.patch.object(swarms, "git", lambda *args, **kwargs: grep if args[1] == "grep" else ""):
+            self.assertEqual(swarms.defs_on_base(Path("."), "up/master", ["run"]), {"_require_unique": {"swarms/structs/b.py"}})
+
 
 class Style(unittest.TestCase):
     def test_flags_only_what_the_added_lines_break(self):
@@ -551,7 +571,7 @@ class PublishFlow(unittest.TestCase):
         self.assertIn("LINKED framework the wording edit filled the links", out)
         self.assertIn("RESULT posted", out)
 
-    def checks(self, on=None, files=()):
+    def checks(self, on=None, files=(), diff=""):
         fake = FakeGh()
         shas = {"feat/x-arun": "a" * 40, "docs/x-arun": "b" * 40}
 
@@ -559,6 +579,8 @@ class PublishFlow(unittest.TestCase):
             args = tuple(map(str, args))
             if args[0] == "api" and "/git/ref/heads/" in args[1]:
                 return shas[args[1].split("/git/ref/heads/")[1]] + "\n"
+            if args[0] == "api" and "/compare/" in args[1] and not json_out:
+                return diff
             if args[0] == "api" and "/compare/" in args[1]:
                 return {"ahead_by": 1, "behind_by": 0, "files": list(files), "merge_base_commit": {"sha": "c" * 40}}
             if args[:2] == ("pr", "list"):
@@ -619,6 +641,15 @@ class PublishFlow(unittest.TestCase):
         (self.task / "publish.json").write_text(__import__("json").dumps(self.manifest), encoding="utf-8")
         swarms.main(["publish", "approve", str(self.task), "--by", "sol"])
         self.assertTrue(any("Sol approves only a framework PR" in f for f in fails(9)), fails(9))
+
+    def test_checks_fail_a_pr_that_adds_a_copy(self):
+        swarms.main(["publish", "approve", str(self.task)])
+        diff = "diff --git a/swarms/a.py b/swarms/a.py\n@@ -0,0 +1 @@\n+def _helper():\n"
+        grep = "upstream/master:swarms/b.py:def _helper():"
+        with mock.patch.object(swarms, "git", lambda *args, **kwargs: grep if args[1] == "grep" else ""), \
+                mock.patch.object(swarms, "upstream_remote", lambda clone, repo: "upstream"):
+            fails = [line for line in self.checks(diff=diff) if line.startswith("FAIL")]
+        self.assertTrue(any("_helper is added in swarms/a.py, and the base already defines it in swarms/b.py" in f for f in fails), fails)
 
     def test_checks_fail_without_approval(self):
         fails = [line for line in self.checks() if line.startswith("FAIL")]

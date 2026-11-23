@@ -501,6 +501,92 @@ def removed_lines_by_file(diff: str) -> dict[str, list[str]]:
     return changed_lines(diff, "-")
 
 
+# Kye turned down five PRs on 2026-11-22 that each added their own copy of one check: the logic belonged in one helper.
+DEF_CHANGE = re.compile(r"^([+-])(\s*)(?:async\s+)?def\s+(\w+)\s*\(")
+COPY_ADVICE = ("write the logic once in a shared helper that every place calls, in one PR; "
+               "allow a name only when two functions should share it")
+
+
+def added_defs(diff: str) -> dict[str, dict]:
+    """Per function name a unified diff adds under swarms/: its files, and whether it reads as a helper
+    (private or module-level). A dunder is left out. So is a file that also removes the name, which is an edit,
+    and one new file for each file that only removes it, which is a move."""
+    found: dict[str, dict[str, bool]] = {}
+    removed: dict[str, set[str]] = collections.defaultdict(set)
+    path = ""
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            path = line.rsplit(" b/", 1)[-1]
+            continue
+        m = DEF_CHANGE.match(line)
+        if not m or not (path.startswith("swarms/") and path.endswith(".py")):
+            continue
+        sign, indent, name = m.groups()
+        if sign == "-":
+            removed[name].add(path)
+        elif not (name.startswith("__") and name.endswith("__")):
+            helpers = found.setdefault(name, {})
+            helpers[path] = helpers.get(path, False) or name.startswith("_") or not indent
+    out = {}
+    for name, helpers in found.items():
+        files = set(helpers) - removed[name]
+        if len(files) > len(removed[name] - set(helpers)):
+            out[name] = {"files": files, "helper": any(helpers[path] for path in files)}
+    return out
+
+
+def defs_on_base(where: Path, ref: str, names: list[str]) -> dict[str, set[str]]:
+    """The files under swarms/ at ref that define each name. It reads the ref and touches no checkout."""
+    git(where, "rev-parse", "--verify", f"{ref}^{{commit}}")
+    sp = "[[:space:]]"
+    pattern = f"^{sp}*(async{sp}+)?def{sp}+({'|'.join(names)}){sp}*\\("
+    out: dict[str, set[str]] = collections.defaultdict(set)
+    for line in git(where, "grep", "-E", pattern, ref, "--", "swarms", check=False).splitlines():
+        path, _, text = line[len(ref) + 1:].partition(":")
+        m = DEF_CHANGE.match("+" + text)
+        if m and path.endswith(".py"):
+            out[m.group(3)].add(path)
+    return out
+
+
+def defs_in_open_prs(skip: int | None = None) -> dict[int, dict[str, set[str]]]:
+    """The functions each of my open swarms PRs adds, as name -> files."""
+    prs = gh("pr", "list", "--repo", SWARMS, "--author", USER, "--state", "open", "--limit", "100", "--json", "number") or []
+    numbers = [p["number"] for p in prs if p["number"] != skip]
+    with cf.ThreadPoolExecutor(max_workers=4) as pool:
+        diffs = list(pool.map(lambda n: gh("pr", "diff", str(n), "--repo", SWARMS, json_out=False), numbers))
+    return {n: {name: e["files"] for name, e in added_defs(d).items()} for n, d in zip(numbers, diffs)}
+
+
+def copy_findings(added: dict[str, dict], on_base: dict[str, set[str]], in_prs: dict[int, dict[str, set[str]]]) -> list[str]:
+    """One line per function a change adds that already exists somewhere else. A method with a public name
+    is compared only with my open PRs, because classes share names like run."""
+    out = []
+    for name, entry in sorted(added.items()):
+        files = entry["files"]
+        mine = ", ".join(sorted(files))
+        if len(files) > 1:
+            out.append(f"{name} is added to {len(files)} files: {mine}")
+        base = sorted(on_base.get(name, set()) - files) if entry["helper"] else []
+        if base:
+            out.append(f"{name} is added in {mine}, and the base already defines it in {', '.join(base)}")
+        for number, theirs in sorted(in_prs.items()):
+            other = sorted(theirs.get(name, set()) - files)
+            if other:
+                out.append(f"{name} is added in {mine}, and my open PR #{number} adds it in {', '.join(other)}")
+    return out
+
+
+def copies_for(diff: str, where: Path, ref: str, allow: set[str], skip: int | None = None,
+               fetch: tuple[str, str] | None = None) -> list[str]:
+    added = {name: entry for name, entry in added_defs(diff).items() if name not in allow}
+    if not added:
+        return []
+    if fetch:
+        git(where, "fetch", "--quiet", *fetch)
+    return copy_findings(added, defs_on_base(where, ref, sorted(added)), defs_in_open_prs(skip))
+
+
 def superseded(repo: str, number: int, base: str) -> str | None:
     """Return a reason when none of the lines the PR removes are still on the base branch."""
     diff = gh("pr", "diff", str(number), "--repo", repo, json_out=False)
@@ -1488,6 +1574,23 @@ def publish_checks(task: Path, m: dict, on: str | None) -> list[str]:
                     f"up to {SOL_MAX_LINES} lines in under 300 files" + ("" if small else "; Khalil approves this one"))
             if pr.get("commits") and cmp["ahead_by"] != pr["commits"]:
                 say("FAIL", f"{tag} expected {pr['commits']} commit(s) ahead of {pr['base']}, found {cmp['ahead_by']}")
+            if repo == SWARMS:
+                copies, broken = [], ""
+                try:
+                    patch = gh("api", f"repos/{repo}/compare/{pr['base']}...{pr['sha']}", "-H",
+                               "Accept: application/vnd.github.diff", json_out=False)
+                    if added_defs(patch):  # only then does it need the clone
+                        clone = clone_for(repo)
+                        remote = upstream_remote(clone, repo)
+                        copies = copies_for(patch, clone, f"{remote}/{pr['base']}", set(pr.get("copies_allow") or []),
+                                            fetch=(remote, pr["base"]))
+                except (SystemExit, GhError) as e:
+                    broken = str(e)
+                    say("FAIL", f"{tag} the copies check could not run: {broken}")
+                for line in copies:
+                    say("FAIL", f"{tag} {line}; {COPY_ADVICE}")
+                if not copies and not broken:
+                    say("PASS", f"{tag} no new function repeats one on {pr['base']} or in another of my open PRs")
             mine = {f["filename"] for f in cmp.get("files") or []}
             if cmp["behind_by"]:
                 since = gh("api", f"repos/{repo}/compare/{cmp['merge_base_commit']['sha']}...{pr['base']}")
@@ -2235,6 +2338,19 @@ def cmd_test_budget(a):
     return 0 if ok else 1
 
 
+def cmd_copies(a):
+    diff, _ = change_under_review(a)
+    where = Path(a.tree).resolve() if a.tree else clone_for(SWARMS)
+    found = copies_for(diff, where, a.base, set(a.allow or []), a.number)
+    for line in found:
+        print(line)
+    if found:
+        print(f"FAIL {len(found)} repeated functions: {COPY_ADVICE}")
+        return 1
+    print(f"PASS no new function under swarms/ repeats one on {a.base} or in another of my open PRs")
+    return 0
+
+
 def cmd_style(a):
     if a.all:
         if not a.tree:
@@ -2431,6 +2547,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tree", help="a worktree whose commits since --base to count")
     p.add_argument("--base", default="upstream/master")
     p.set_defaults(func=cmd_test_budget)
+
+    p = sub.add_parser("copies", help="new functions under swarms/ that the base or another of my open PRs already has")
+    p.add_argument("number", type=int, nargs="?", help="a swarms PR; or use --tree for a local branch")
+    p.add_argument("--tree", help="a worktree whose commits since --base to check")
+    p.add_argument("--base", default="upstream/master")
+    p.add_argument("--allow", nargs="+", metavar="NAME", help="function names that two places should share")
+    p.set_defaults(func=cmd_copies)
 
     p = sub.add_parser("style", help="the swarms CLAUDE.md style rules, checked on the lines a change adds")
     p.add_argument("number", type=int, nargs="?", help="a swarms PR; or use --tree for a local branch")
