@@ -84,6 +84,7 @@ class Titles(unittest.TestCase):
     def test_copies_finds_a_function_the_base_or_another_open_pr_already_has(self):
         diff = ("diff --git a/swarms/structs/a.py b/swarms/structs/a.py\n@@ -1,2 +1,5 @@\n-    def _old(self):\n"
                 "+    def _old(self, x):\n+    def _require_unique(self):\n+    def run(self):\n+    def __init__(self):\n"
+                "diff --git a/swarms/structs/f.py b/swarms/structs/f.py\n@@ -1 +1 @@\n-def run():\n+def run(x):\n"
                 "diff --git a/swarms/structs/d.py b/swarms/structs/d.py\n@@ -1 +1 @@\n-def _moved():\n+    def _old(self):\n"
                 "diff --git a/swarms/structs/e.py b/swarms/structs/e.py\n@@ -0,0 +1 @@\n+def _moved():\n"
                 "diff --git a/tests/t.py b/tests/t.py\n@@ -0,0 +1 @@\n+def _require_unique():\n")

@@ -511,7 +511,7 @@ def added_defs(diff: str) -> dict[str, dict]:
     """Per function name a unified diff adds under swarms/: its files, and whether it reads as a helper
     (private or module-level). A dunder is left out. So is a file that also removes the name, which is an edit,
     and one new file for each file that only removes it, which is a move."""
-    found: dict[str, dict] = {}
+    found: dict[str, dict[str, bool]] = {}
     removed: dict[str, set[str]] = collections.defaultdict(set)
     path = ""
     for line in diff.splitlines():
@@ -525,14 +525,13 @@ def added_defs(diff: str) -> dict[str, dict]:
         if sign == "-":
             removed[name].add(path)
         elif not (name.startswith("__") and name.endswith("__")):
-            entry = found.setdefault(name, {"files": set(), "helper": False})
-            entry["files"].add(path)
-            entry["helper"] = entry["helper"] or name.startswith("_") or not indent
+            helpers = found.setdefault(name, {})
+            helpers[path] = helpers.get(path, False) or name.startswith("_") or not indent
     out = {}
-    for name, entry in found.items():
-        files = entry["files"] - removed[name]
-        if len(files) > len(removed[name] - entry["files"]):
-            out[name] = {"files": files, "helper": entry["helper"]}
+    for name, helpers in found.items():
+        files = set(helpers) - removed[name]
+        if len(files) > len(removed[name] - set(helpers)):
+            out[name] = {"files": files, "helper": any(helpers[path] for path in files)}
     return out
 
 
