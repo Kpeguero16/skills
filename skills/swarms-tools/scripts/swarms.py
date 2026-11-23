@@ -1923,7 +1923,7 @@ def cmd_ci(a):
         still_running(repo, c)
         for c in gh("pr", "view", str(a.number), "--repo", repo, "--json", "statusCheckRollup")["statusCheckRollup"] or []
     ):
-        time.sleep(60)
+        time.sleep(max(0, min(60, deadline - time.monotonic())))
     lines, code = ci_report(repo, a.number)
     print("\n".join(lines))
     return code
