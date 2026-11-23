@@ -509,9 +509,10 @@ COPY_ADVICE = ("write the logic once in a shared helper that every place calls, 
 
 def added_defs(diff: str) -> dict[str, dict]:
     """Per function name a unified diff adds under swarms/: its files, and whether it reads as a helper
-    (private or module-level). A dunder is left out, and so is a name the diff also removes, which is a move or an edit."""
+    (private or module-level). A dunder is left out. So is a file that also removes the name, which is an edit,
+    and one new file for each file that only removes it, which is a move."""
     found: dict[str, dict] = {}
-    removed: set[str] = set()
+    removed: dict[str, set[str]] = collections.defaultdict(set)
     path = ""
     for line in diff.splitlines():
         if line.startswith("diff --git "):
@@ -522,12 +523,17 @@ def added_defs(diff: str) -> dict[str, dict]:
             continue
         sign, indent, name = m.groups()
         if sign == "-":
-            removed.add(name)
+            removed[name].add(path)
         elif not (name.startswith("__") and name.endswith("__")):
             entry = found.setdefault(name, {"files": set(), "helper": False})
             entry["files"].add(path)
             entry["helper"] = entry["helper"] or name.startswith("_") or not indent
-    return {name: entry for name, entry in found.items() if name not in removed}
+    out = {}
+    for name, entry in found.items():
+        files = entry["files"] - removed[name]
+        if len(files) > len(removed[name] - entry["files"]):
+            out[name] = {"files": files, "helper": entry["helper"]}
+    return out
 
 
 def defs_on_base(where: Path, ref: str, names: list[str]) -> dict[str, set[str]]:
@@ -1570,9 +1576,10 @@ def publish_checks(task: Path, m: dict, on: str | None) -> list[str]:
             if pr.get("commits") and cmp["ahead_by"] != pr["commits"]:
                 say("FAIL", f"{tag} expected {pr['commits']} commit(s) ahead of {pr['base']}, found {cmp['ahead_by']}")
             if repo == SWARMS:
-                patch = "".join(f"diff --git a/{f['filename']} b/{f['filename']}\n{f.get('patch') or ''}\n" for f in cmp.get("files") or [])
                 copies, broken = [], ""
                 try:
+                    patch = gh("api", f"repos/{repo}/compare/{pr['base']}...{pr['sha']}", "-H",
+                               "Accept: application/vnd.github.diff", json_out=False)
                     if added_defs(patch):  # only then does it need the clone
                         clone = clone_for(repo)
                         remote = upstream_remote(clone, repo)

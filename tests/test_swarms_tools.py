@@ -84,9 +84,12 @@ class Titles(unittest.TestCase):
     def test_copies_finds_a_function_the_base_or_another_open_pr_already_has(self):
         diff = ("diff --git a/swarms/structs/a.py b/swarms/structs/a.py\n@@ -1,2 +1,5 @@\n-    def _old(self):\n"
                 "+    def _old(self, x):\n+    def _require_unique(self):\n+    def run(self):\n+    def __init__(self):\n"
+                "diff --git a/swarms/structs/d.py b/swarms/structs/d.py\n@@ -1 +1 @@\n-def _moved():\n+    def _old(self):\n"
+                "diff --git a/swarms/structs/e.py b/swarms/structs/e.py\n@@ -0,0 +1 @@\n+def _moved():\n"
                 "diff --git a/tests/t.py b/tests/t.py\n@@ -0,0 +1 @@\n+def _require_unique():\n")
         added = swarms.added_defs(diff)
         self.assertEqual(added, {"_require_unique": {"files": {"swarms/structs/a.py"}, "helper": True},
+                                 "_old": {"files": {"swarms/structs/d.py"}, "helper": True},
                                  "run": {"files": {"swarms/structs/a.py"}, "helper": False}})
         base = {"_require_unique": {"swarms/structs/b.py"}, "run": {"swarms/structs/b.py"}}
         prs = {7: {"run": {"swarms/structs/c.py"}, "_require_unique": {"swarms/structs/a.py"}}}
@@ -556,7 +559,7 @@ class PublishFlow(unittest.TestCase):
         self.assertIn("LINKED framework the wording edit filled the links", out)
         self.assertIn("RESULT posted", out)
 
-    def checks(self, on=None, files=()):
+    def checks(self, on=None, files=(), diff=""):
         fake = FakeGh()
         shas = {"feat/x-arun": "a" * 40, "docs/x-arun": "b" * 40}
 
@@ -564,6 +567,8 @@ class PublishFlow(unittest.TestCase):
             args = tuple(map(str, args))
             if args[0] == "api" and "/git/ref/heads/" in args[1]:
                 return shas[args[1].split("/git/ref/heads/")[1]] + "\n"
+            if args[0] == "api" and "/compare/" in args[1] and not json_out:
+                return diff
             if args[0] == "api" and "/compare/" in args[1]:
                 return {"ahead_by": 1, "behind_by": 0, "files": list(files), "merge_base_commit": {"sha": "c" * 40}}
             if args[:2] == ("pr", "list"):
@@ -624,6 +629,15 @@ class PublishFlow(unittest.TestCase):
         (self.task / "publish.json").write_text(__import__("json").dumps(self.manifest), encoding="utf-8")
         swarms.main(["publish", "approve", str(self.task), "--by", "sol"])
         self.assertTrue(any("Sol approves only a framework PR" in f for f in fails(9)), fails(9))
+
+    def test_checks_fail_a_pr_that_adds_a_copy(self):
+        swarms.main(["publish", "approve", str(self.task)])
+        diff = "diff --git a/swarms/a.py b/swarms/a.py\n@@ -0,0 +1 @@\n+def _helper():\n"
+        grep = "upstream/master:swarms/b.py:def _helper():"
+        with mock.patch.object(swarms, "git", lambda *args, **kwargs: grep if args[1] == "grep" else ""), \
+                mock.patch.object(swarms, "upstream_remote", lambda clone, repo: "upstream"):
+            fails = [line for line in self.checks(diff=diff) if line.startswith("FAIL")]
+        self.assertTrue(any("_helper is added in swarms/a.py, and the base already defines it in swarms/b.py" in f for f in fails), fails)
 
     def test_checks_fail_without_approval(self):
         fails = [line for line in self.checks() if line.startswith("FAIL")]
