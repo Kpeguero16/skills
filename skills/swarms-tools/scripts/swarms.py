@@ -1860,6 +1860,12 @@ def base_jobs(repo: str, sha: str) -> dict[str, dict]:
     return jobs
 
 
+def still_running(repo: str, check: dict) -> bool:
+    """Whether a check in a PR's status rollup hasn't finished; status contexts and noise checks never count."""
+    name = check.get("name") or check.get("context", "")
+    return name not in NOISE_CHECKS.get(repo, set()) and (check.get("status") or "").upper() != "COMPLETED" and "context" not in check
+
+
 def ci_report(repo: str, number: int) -> tuple[list[str], int]:
     """Each failing check on the PR, and its failures that the same job didn't have on the base the run tested against."""
     base = DEFAULT_BRANCH.get(repo, "main")
@@ -1869,7 +1875,7 @@ def ci_report(repo: str, number: int) -> tuple[list[str], int]:
         name = check.get("name") or check.get("context", "")
         if name in NOISE_CHECKS.get(repo, set()):
             continue
-        if (check.get("status") or "").upper() != "COMPLETED" and "context" not in check:
+        if still_running(repo, check):
             lines.append(f"INFO {name}: still running")
             pending = True
             continue
@@ -1912,6 +1918,12 @@ def ci_report(repo: str, number: int) -> tuple[list[str], int]:
 
 def cmd_ci(a):
     repo = {"swarms": SWARMS, "docs": DOCS}[a.repo]
+    deadline = time.monotonic() + a.wait * 60
+    while a.wait and time.monotonic() < deadline and any(
+        still_running(repo, c)
+        for c in gh("pr", "view", str(a.number), "--repo", repo, "--json", "statusCheckRollup")["statusCheckRollup"] or []
+    ):
+        time.sleep(max(0, min(60, deadline - time.monotonic())))
     lines, code = ci_report(repo, a.number)
     print("\n".join(lines))
     return code
@@ -2328,6 +2340,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("ci", help="the CI failures a PR has that the default branch's same jobs don't")
     p.add_argument("number", type=int)
     p.add_argument("--repo", choices=["swarms", "docs"], default="swarms")
+    p.add_argument("--wait", type=int, nargs="?", const=20, default=0, metavar="MINUTES",
+                   help="first wait for running jobs to finish, checking every minute, up to MINUTES (default 20)")
     p.set_defaults(func=cmd_ci)
 
     p = sub.add_parser("ledger", help="the outcomes ledger: sync, add or stats")
