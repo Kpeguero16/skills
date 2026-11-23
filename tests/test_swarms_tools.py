@@ -81,6 +81,22 @@ class Titles(unittest.TestCase):
         self.assertEqual(swarms.budget_for(swarms.diff_files(diff)), (1, 2, 20))
         self.assertEqual(swarms.budget_for([("swarms/a.py", 108), ("tests/t.py", 57)]), (108, 57, 108))
 
+    def test_copies_finds_a_function_the_base_or_another_open_pr_already_has(self):
+        diff = ("diff --git a/swarms/structs/a.py b/swarms/structs/a.py\n@@ -1,2 +1,5 @@\n-    def _old(self):\n"
+                "+    def _old(self, x):\n+    def _require_unique(self):\n+    def run(self):\n+    def __init__(self):\n"
+                "diff --git a/tests/t.py b/tests/t.py\n@@ -0,0 +1 @@\n+def _require_unique():\n")
+        added = swarms.added_defs(diff)
+        self.assertEqual(added, {"_require_unique": {"files": {"swarms/structs/a.py"}, "helper": True},
+                                 "run": {"files": {"swarms/structs/a.py"}, "helper": False}})
+        base = {"_require_unique": {"swarms/structs/b.py"}, "run": {"swarms/structs/b.py"}}
+        prs = {7: {"run": {"swarms/structs/c.py"}, "_require_unique": {"swarms/structs/a.py"}}}
+        self.assertEqual(swarms.copy_findings(added, base, prs), [
+            "_require_unique is added in swarms/structs/a.py, and the base already defines it in swarms/structs/b.py",
+            "run is added in swarms/structs/a.py, and my open PR #7 adds it in swarms/structs/c.py"])
+        grep = "up/master:swarms/structs/b.py:    def _require_unique(self) -> None:\nup/master:swarms/x.md:def run("
+        with mock.patch.object(swarms, "git", lambda *args, **kwargs: grep if args[1] == "grep" else ""):
+            self.assertEqual(swarms.defs_on_base(Path("."), "up/master", ["run"]), {"_require_unique": {"swarms/structs/b.py"}})
+
 
 class Style(unittest.TestCase):
     def test_flags_only_what_the_added_lines_break(self):
