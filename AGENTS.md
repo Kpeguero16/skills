@@ -46,7 +46,7 @@ In both clones, `upstream` is the main repo and `origin` is my fork. On another 
 
 ### PRs
 
-- Titles use WARP: `[TYPE][Symbol][Imperative description]`, such as `[FIX][Agent._run][End each loop's request with a user turn]`.
+- Titles use WARP: `[TYPE][Symbol][Imperative description]`, such as `[FIX][Agent._run][End each loop's request with a user turn]`. The description says what the change does to the code in plain words. For a new class member, put the class in `Symbol` and name the kind of member, such as `[FEAT][IterativeReflectiveExpansion][Add a usage method]`. A fix leads with the corrected behavior, and keeps a short "instead of" clause when it names the old bug. Don't copy an issue title that describes a result. Kye missed #3707 on 2026-11-23 because its title, copied from his issue, did that.
 - The body opens with the problem as a user would see it, then the fix, then the evidence: the check that fails on master and passes on the branch, or for a deletion, the search that shows nothing uses it. Use `Closes #N` for the issue.
 - Every PR has an issue, so people can see what I'm working on. Kye asked for this on 2026-11-20, and in meetings he has asked contributors to open more issues so he isn't the only one. `swarms-picks` opens an issue for each finding that has none, after a Sol review. The docs PR names the issue as `kyegomez/swarms#N`. A security fix gets no public issue. `publish check` fails a framework PR that doesn't close an open issue.
 - End the body with `🤖 Generated with [Claude Code](https://claude.com/claude-code) (<model>)`, naming the model that did the work, and end commits with a matching `Co-Authored-By` trailer. Never remove the 🤖 line.
