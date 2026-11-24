@@ -162,6 +162,16 @@ S1 [blocker|should|nit] <draft>:<line> <claim>. Fix: <suggestion>
 
 Fix what the review shows, then open each draft with `python3 $T open-issue <draft>`. It refuses a draft with a placeholder or without the 🤖 line, prints `EXISTS <url>` when I already have an open issue with that title, and prints `OPENED <url>` otherwise. A draft with a blocker, or with a should still open when the budget runs out, stays unopened, and its Issue line says why. Put each issue link on the item's Issue line in the brief and the report.
 
+## Issue watch
+
+Kye posts most of his issues between noon and 5 PM, and other contributors open PRs on them within hours. In the week to 2026-11-24 they were first on 19 of his issues, a median 7.7 hours after he posted, and I was first on 19 at a median 21.2 hours. So the afternoon scheduled runs ask for the issue watch. It runs this skill on new issues only:
+
+1. `python3 $T kye-issues --hours 4`. When it lists nothing, say so in one line and stop.
+2. For each issue it lists: step 1's snapshot, step 4's checks (including `competition`, since someone may have started without a PR), and a brief in `<tasks>/handoffs/<date>/`, numbered after the briefs already there. Add one ledger row per brief with source `issue #N`. Write no issue drafts, because Kye's issue already exists.
+3. Write `<tasks>/daily-opportunities/<date>-watch-<HHMM>.md`, with one shortlist entry per brief in the step 6 format.
+4. Load `PushNotification` with ToolSearch, and send one notification: how many issues, and each title. If it can't be loaded, say so in the thread.
+5. Don't start any owner threads. I pick, as in step 8.
+
 ## 8. When I pick
 
 When I name the items to run, such as "run 1, 3 and 5", run `git fetch upstream master` in the swarms clone, then start one T3 thread per item with `t3_thread_launch`: the swarms project's `projectId`, `workspaceStrategy` set to `{type: "worktree", baseRef: "upstream/master"}`, and one message. A Shortlist item gets `Own it, full send: <brief path>`, so it posts on Sol's approval. A Big PRs item or a security fix gets `Own it, full stop: <brief path>`, so it waits for mine. When I name a mode for an item, use mine. Don't use `create_threads`. It has no worktree option, so its threads land in the main clone. Reply with each thread's link.

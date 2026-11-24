@@ -2127,6 +2127,36 @@ def cmd_merged(a):
             print(f"  {', '.join(paths[:6])}{' ...' if len(paths) > 6 else ''}")
 
 
+def unclaimed_issues(hours: float, now: dt.datetime) -> list[dict]:
+    """Kye's issues opened in the hours before now that no PR, open or closed, named by then."""
+    since = now - dt.timedelta(hours=hours)
+    stamp = since.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    issues = gh("issue", "list", "--repo", SWARMS, "--author", MAINTAINER, "--state", "all", "--limit", "200",
+                "--search", f"created:>={stamp}", "--json", "number,title,url,createdAt,closedAt") or []
+    prs = gh("pr", "list", "--repo", SWARMS, "--state", "all", "--limit", "500", "--search", f"created:>={stamp}",
+             "--json", "number,title,body,createdAt") or []
+    named = " ".join(f"{p['title']} {p.get('body') or ''}" for p in prs if parse_ts(p["createdAt"]) <= now)
+    out = []
+    for issue in sorted(issues, key=lambda i: i["number"]):
+        closed = parse_ts(issue.get("closedAt"))
+        if parse_ts(issue["createdAt"]) > now or (closed and closed <= now):
+            continue
+        if not re.search(rf"#{issue['number']}\b|/issues/{issue['number']}\b", named):
+            out.append(issue)
+    return out
+
+
+def cmd_kye_issues(a):
+    now = parse_ts(a.now) if a.now else dt.datetime.now(dt.timezone.utc)
+    if now.tzinfo is None:
+        now = now.astimezone()
+    found = unclaimed_issues(a.hours, now)
+    print(f"# {len(found)} of Kye's issues from the last {a.hours:g} hours that no PR names yet")
+    for i in found:
+        age = (now - parse_ts(i["createdAt"])).total_seconds() / 3600
+        print(f"#{i['number']} {age:.1f} h old  {i['title']}  <{i['url']}>")
+
+
 def cmd_competition(a):
     repo = DOCS if a.repo == "docs" else SWARMS
     rows = competition(repo, a.terms, a.removed, set(a.allow or []))
@@ -2495,6 +2525,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--repo", choices=["swarms", "docs"], default="swarms")
     p.add_argument("--type", nargs="+", help="only these title types, such as FIX PERF")
     p.set_defaults(func=cmd_merged)
+
+    p = sub.add_parser("kye-issues", help="Kye's issues from the last N hours that no PR names yet")
+    p.add_argument("--hours", type=float, default=4)
+    p.add_argument("--now", help="answer as of this ISO time instead, to replay a past day")
+    p.set_defaults(func=cmd_kye_issues)
 
     p = sub.add_parser("competition", help="PRs that mention these terms, and whether they remove the same lines")
     p.add_argument("terms", nargs="+")

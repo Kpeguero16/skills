@@ -31,6 +31,7 @@ Run it as `python3 <this folder>/scripts/swarms.py <command>`, or `py -3 ...` on
 | `unused PATH... --tree T [--docs D]` | Functions, classes, methods, constants and `self.` attributes that nothing reads. |
 | `leads PATH... --tree T [--select RULES] [--limit N]` | What ruff finds with rules the swarms lint job doesn't run: a parameter a method never reads, a dropped exception, a mutable default argument and a loop closure. It uses ruff from the swarms venv, from PATH or through `uvx`. |
 | `merged [--days N] [--repo docs] [--type T...]` | Every PR merged in the last N days, anyone's, with the files it touched outside tests and examples. |
+| `kye-issues [--hours N] [--now ISO]` | Kye's issues from the last N hours (default 4) that no PR names yet. `--now` answers as of a past time, to replay a day. |
 | `competition TERM... [--removed REGEX] [--allow N...]` | PRs that mention the terms, and whether each removes the same lines. |
 | `ledger sync`, `ledger add`, `ledger stats` | The outcomes ledger at `tasks/daily-opportunities/outcomes.tsv`. `add` fails for an item whose task folder holds a `DROPPED.md`. `sync` fills the `later` column for a merged PR that Kye reverted, or whose added lines someone else's fix removed within 14 days, and `stats` counts them. |
 | `publish init`, `approve`, `check`, `post` | The publish flow. See the `swarms-publish` skill. |
