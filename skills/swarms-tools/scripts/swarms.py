@@ -874,6 +874,52 @@ def ledger_upsert(rows: list[dict], **fields) -> dict:
     return row
 
 
+GITHUB_FIELDS = ("pr", "type", "opened", "lines", "state", "merged", "hours", "later", "reason")
+
+
+def merge_ledgers(rows: list[dict], others: list[dict]) -> list[dict]:
+    """This ledger plus another machine's: one row per PR or item, each gap filled from either copy."""
+    out = [dict(r) for r in rows]
+    for other in others:
+        issue = re.fullmatch(r"issue #\d+", other.get("source") or "")
+        row = next((r for r in out if other.get("pr") and r.get("pr") == other["pr"]), None) or next(
+            (r for r in out if not (r.get("pr") and other.get("pr")) and (
+                (other.get("item") and r.get("item") == other["item"])
+                or (issue and not r.get("pr") and not other.get("pr") and r.get("source") == other["source"]))), None)
+        if row is None:
+            out.append(dict(other))
+            continue
+        if not row.get("pr") and (other.get("pr") or other.get("state") == "taken"):
+            row.update({k: other[k] for k in GITHUB_FIELDS if other.get(k)})
+        for key, value in other.items():
+            if value and (not row.get(key) or (key == "source" and row[key] == "unknown")):
+                row[key] = value
+    return out
+
+
+def taken_by_others(rows: list[dict], since: dt.date) -> int:
+    """Mark each pick whose issue someone else's PR closes as taken; returns how many changed."""
+    marked = 0
+    for row in rows:
+        m = re.fullmatch(r"issue #(\d+)", row.get("source") or "")
+        if not m or row.get("pr") or row.get("state") == "taken" or (row.get("listed") or "") < since.isoformat():
+            continue
+        try:
+            issue = gh("issue", "view", m.group(1), "--repo", SWARMS, "--json", "createdAt,closedByPullRequestsReferences")
+            prs = [gh("pr", "view", ref["url"], "--json", "number,author,createdAt")
+                   for ref in issue.get("closedByPullRequestsReferences") or []]
+        except GhError:
+            continue
+        if not prs or any(p["author"]["login"] == USER for p in prs):
+            continue
+        first = min(prs, key=lambda p: p["createdAt"])
+        hours = (parse_ts(first["createdAt"]) - parse_ts(issue["createdAt"])).total_seconds() / 3600
+        # For a taken row, hours runs from the issue to the other person's PR.
+        row.update(state="taken", hours=str(round(hours, 1)), reason=f"taken by {first['author']['login']} in #{first['number']}")
+        marked += 1
+    return marked
+
+
 def maintainer_reason(repo: str, number: int) -> str:
     data = gh("pr", "view", str(number), "--repo", repo, "--json", "reviews,comments")
     said = [(c["createdAt"], c.get("body", "")) for c in data.get("comments") or [] if c["author"]["login"] == MAINTAINER]
@@ -977,6 +1023,7 @@ def ledger_sync(path: Path, since: dt.date | None) -> tuple[int, int]:
             if not row.get("reason") and (state == "closed" or p.get("reviewDecision") == "CHANGES_REQUESTED"):
                 row["reason"] = maintainer_reason(repo, p["number"]) or ("closed with no comment from Kye" if state == "closed" else "")
     updated += fold_by_brief(rows)
+    updated += taken_by_others(rows, follow_from)
     rows.sort(key=lambda r: (r.get("listed", ""), r.get("opened", ""), r.get("pr", "")))
     write_ledger(path, rows)
     return added, updated
@@ -1006,8 +1053,14 @@ def ledger_stats(rows: list[dict], days: int | None, repo: str | None) -> str:
     lines += [""] + table("Type", lambda r: r.get("type", ""))
     lines += [""] + table("Size (lines changed)", lambda r: size_bucket(int(r.get("lines") or 0)), [b for _, b in SIZE_BUCKETS])
     lines += [""] + table("Source", lambda r: ((r.get("source") or "unknown").split() or ["unknown"])[0])
-    never = [r for r in rows if not r.get("pr")]
+    never = [r for r in rows if not r.get("pr") and r.get("state") != "taken"]
     lines += ["", f"Listed but never opened: {len(never)}."]
+    taken = [r for r in rows if not r.get("pr") and r.get("state") == "taken"]
+    if taken:
+        waits = [float(r["hours"]) for r in taken if r.get("hours")]
+        median = f", a median {statistics.median(waits):.1f} hours after the issue opened" if waits else ""
+        lines += ["", f"Taken by others first: {len(taken)}{median}."]
+        lines += [f"- {r['item']}: {r.get('reason', '')}" for r in taken]
     merged = [r for r in with_pr if r["state"] == "merged"]
     undone = [r for r in merged if r.get("later")]
     lines += ["", f"Reverted, or changed by someone's fix within {FOLLOW_UP_DAYS} days of merging: {len(undone)} of {len(merged)} merged."]
@@ -2073,7 +2126,10 @@ def cmd_ledger(a):
         write_ledger(path, rows)
         print("\t".join(row.get(c, "") for c in LEDGER_COLUMNS))
     elif a.action == "stats":
-        print(ledger_stats(read_ledger(path), a.days, {"swarms": SWARMS, "docs": DOCS}.get(a.repo)))
+        rows = read_ledger(path)
+        for other in a.add or []:
+            rows = merge_ledgers(rows, read_ledger(Path(other)))
+        print(ledger_stats(rows, a.days, {"swarms": SWARMS, "docs": DOCS}.get(a.repo)))
 
 
 def cmd_scan(a):
@@ -2465,6 +2521,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ledger")
     p.add_argument("--since", help="sync: first day to include (backfill)")
     p.add_argument("--days", type=int, help="stats: only rows listed in the last N days")
+    p.add_argument("--add", nargs="+", metavar="FILE", help="stats: also count other machines' outcomes.tsv files")
     p.add_argument("--repo", choices=["swarms", "docs", "all"], default="swarms")
     for flag in ("--item", "--source", "--type", "--est", "--pr", "--brief", "--listed"):
         p.add_argument(flag)
