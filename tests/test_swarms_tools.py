@@ -418,6 +418,29 @@ class Ledger(unittest.TestCase):
             swarms.ledger_sync(path, None)
             self.assertEqual(swarms.read_ledger(path)[0]["later"], "reverted by #9")
 
+    def test_a_pick_someone_else_took_and_the_other_machines_rows(self):
+        issue = {"createdAt": "2026-11-22T22:06:00Z", "closedByPullRequestsReferences": [{"url": "u/3696"}]}
+        theirs = {"number": 3696, "author": {"login": "Steve-Dusty"}, "createdAt": "2026-11-23T17:12:00Z"}
+        fake = lambda *args, **kwargs: issue if args[:2] == ("issue", "view") else theirs
+        today = dt.date.today().isoformat()
+        pick = {"listed": today, "item": "[FEAT][ReasoningDuo.usage][Add it]", "source": "issue #3676", "state": "listed"}
+        mine = [dict(pick), {"listed": today, "item": "[FIX][a][Fix a]", "pr": "kyegomez/swarms#1", "state": "merged",
+                             "type": "FIX", "lines": "5", "hours": "1.0", "source": "unknown"}]
+        with mock.patch.object(swarms, "gh", fake):
+            self.assertEqual(swarms.taken_by_others(mine, dt.date.today()), 1)
+        self.assertEqual((mine[0]["state"], mine[0]["hours"], mine[0]["reason"]),
+                         ("taken", "19.1", "taken by Steve-Dusty in #3696"))
+        pc = [dict(pick, item="[FEAT][ReasoningDuo.usage][Same issue, other title]"), {"listed": today, "item": "[FIX][a][Fix a]", "source": "issue #9", "brief": "b.md"},
+              {"listed": today, "item": "[FIX][c][Fix c]", "pr": "kyegomez/swarms#2", "state": "open"}]
+        rows = swarms.merge_ledgers(mine, pc)
+        self.assertEqual([(r["item"], r.get("pr"), r["state"], r.get("source", "")) for r in rows], [
+            ("[FEAT][ReasoningDuo.usage][Add it]", None, "taken", "issue #3676"),
+            ("[FIX][a][Fix a]", "kyegomez/swarms#1", "merged", "issue #9"),
+            ("[FIX][c][Fix c]", "kyegomez/swarms#2", "open", "")])
+        stats = swarms.ledger_stats(rows, 7, swarms.SWARMS)
+        self.assertIn("Listed but never opened: 0.", stats)
+        self.assertIn("Taken by others first: 1, a median 19.1 hours after the issue opened.", stats)
+
     def test_infer_source(self):
         self.assertEqual(swarms.infer_source("Closes #3157.\n\nDeletes it."), "issue #3157")
         self.assertEqual(swarms.infer_source("No issue."), "")
