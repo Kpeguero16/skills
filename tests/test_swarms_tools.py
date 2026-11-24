@@ -291,6 +291,23 @@ class Checks(unittest.TestCase):
         self.assertFalse(swarms.is_bot("kyegomez"))
 
 
+class KyeIssues(unittest.TestCase):
+    def test_lists_the_issues_no_pr_named_by_then(self):
+        def issue(n, at, closed=None):
+            return {"number": n, "title": f"[BUG][x][{n}]", "url": f"u/{n}", "createdAt": at, "closedAt": closed}
+
+        issues = [issue(1, "2026-11-22T22:06:00Z"), issue(2, "2026-11-22T22:06:00Z"), issue(3, "2026-11-22T22:06:00Z"),
+                  issue(4, "2026-11-22T22:06:00Z", closed="2026-11-22T22:30:00Z"), issue(5, "2026-11-23T02:00:00Z")]
+        prs = [{"number": 9, "title": "[FIX][x][y]", "body": "Closes #2", "createdAt": "2026-11-22T23:00:00Z"},
+               {"number": 10, "title": "[FIX][x][y]", "body": "Closes #3", "createdAt": "2026-11-23T05:00:00Z"},
+               {"number": 11, "title": "[FIX][x][y]", "body": "Part of #12", "createdAt": "2026-11-22T23:00:00Z"}]
+        fake = lambda *args, **kwargs: issues if args[0] == "issue" else prs
+        with mock.patch.object(swarms, "gh", fake):
+            found = swarms.unclaimed_issues(4, swarms.parse_ts("2026-11-23T00:00:00Z"))
+        # 2 has a PR by then, 3's PR comes later, 4 was closed, 5 didn't exist yet, and #12 isn't #1.
+        self.assertEqual([i["number"] for i in found], [1, 3])
+
+
 class Ledger(unittest.TestCase):
     def test_add_refuses_a_dropped_item(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"SWARMS_TASKS": tmp}):
