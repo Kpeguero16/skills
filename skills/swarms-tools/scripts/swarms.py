@@ -2240,7 +2240,8 @@ def outside_claims(now: dt.datetime, min_age: float, team: set[str]) -> list[dic
         live = by_issue.get(issue["number"], [])
         if issue["assignees"] or not live or issue["number"] in merged:
             continue
-        if all(p["author"]["login"] not in team and (now - parse_ts(p["createdAt"])).days >= min_age for p in live):
+        if all(p["author"]["login"] not in team and now - parse_ts(p["createdAt"]) >= dt.timedelta(days=min_age)
+               for p in live):
             out.append({**issue, "prs": live})
     return sorted(out, key=lambda i: (i["author"]["login"] != MAINTAINER, -i["number"]))
 
