@@ -1250,11 +1250,11 @@ def parse_leads(ruff_json: str, tree: Path) -> dict[str, list[str]]:
     return {rule: [f"{rel}:{row} {msg}" for rel, row, msg in sorted(found)] for rule, found in hits.items()}
 
 
-def merged_prs(repo: str, days: int) -> list[dict]:
-    """Every PR merged into the repo in the last N days, anyone's, newest first, with its files."""
+def merged_prs(repo: str, days: int, fields: str = "number,title,author,mergedAt,files") -> list[dict]:
+    """Every PR merged into the repo in the last N days, anyone's, newest first, with its files unless fields drops them."""
     since = (dt.date.today() - dt.timedelta(days=days)).isoformat()
     prs = gh("pr", "list", "--repo", repo, "--state", "merged", "--limit", "1000", "--search", f"merged:>={since}",
-             "--json", "number,title,author,mergedAt,files") or []
+             "--json", fields) or []
     return sorted(prs, key=lambda p: p["mergedAt"], reverse=True)
 
 
@@ -2191,15 +2191,58 @@ def unclaimed_issues(hours: float, now: dt.datetime) -> list[dict]:
                 "--search", f"created:>={stamp}", "--json", "number,title,url,createdAt,closedAt") or []
     prs = gh("pr", "list", "--repo", SWARMS, "--state", "all", "--limit", "500", "--search", f"created:>={stamp}",
              "--json", "number,title,body,createdAt") or []
-    named = " ".join(f"{p['title']} {p.get('body') or ''}" for p in prs if parse_ts(p["createdAt"]) <= now)
+    named = set().union(*(issue_refs(p) for p in prs if parse_ts(p["createdAt"]) <= now))
     out = []
     for issue in sorted(issues, key=lambda i: i["number"]):
         closed = parse_ts(issue.get("closedAt"))
         if parse_ts(issue["createdAt"]) > now or (closed and closed <= now):
             continue
-        if not re.search(rf"#{issue['number']}\b|/issues/{issue['number']}\b", named):
+        if issue["number"] not in named:
             out.append(issue)
     return out
+
+
+def issue_refs(pr: dict) -> set[int]:
+    """The issue numbers a PR's title or body names, as #N or an /issues/N link."""
+    text = f"{pr['title']} {pr.get('body') or ''}"
+    return {int(n) for n in re.findall(r"(?:#|/issues/)(\d+)\b", text)}
+
+
+REGULAR_DAYS = 5  # merges on this many days in the last 30 make a daily contributor; outsiders had 3 at most in Nov 2026
+
+
+def regulars(days: int = 30, min_days: int = REGULAR_DAYS) -> set[str]:
+    """The daily contributors: authors with merges on min_days separate days in the last N days, plus Kye and me."""
+    merge_days: dict[str, set[str]] = collections.defaultdict(set)
+    for p in merged_prs(SWARMS, days, "author,mergedAt"):
+        merge_days[p["author"]["login"]].add(p["mergedAt"][:10])
+    return {a for a, d in merge_days.items() if len(d) >= min_days} | {MAINTAINER, USER}
+
+
+def outside_claims(now: dt.datetime, min_age: float, team: set[str]) -> list[dict]:
+    """Open, unassigned issues whose only open PRs are outside contributors' and min_age days old or more.
+
+    Kye rarely merges those: of the 112 outside PRs that waited 7 days unmerged from 2026-09-07 to
+    2026-11-26, 8 merged later. An issue that a merged PR names, or a daily contributor's open one, is left out.
+    """
+    issues = gh("issue", "list", "--repo", SWARMS, "--state", "open", "--limit", "500",
+                "--json", "number,title,url,author,createdAt,assignees") or []
+    prs = gh("pr", "list", "--repo", SWARMS, "--state", "open", "--limit", "1000",
+             "--json", "number,title,body,author,createdAt,additions,deletions") or []
+    merged = set().union(*map(issue_refs, gh("pr", "list", "--repo", SWARMS, "--state", "merged", "--limit", "5000",
+                                             "--json", "number,title,body") or []))
+    by_issue: dict[int, list[dict]] = collections.defaultdict(list)
+    for p in prs:
+        for n in issue_refs(p):
+            by_issue[n].append(p)
+    out = []
+    for issue in issues:
+        live = by_issue.get(issue["number"], [])
+        if issue["assignees"] or not live or issue["number"] in merged:
+            continue
+        if all(p["author"]["login"] not in team and (now - parse_ts(p["createdAt"])).days >= min_age for p in live):
+            out.append({**issue, "prs": live})
+    return sorted(out, key=lambda i: (i["author"]["login"] != MAINTAINER, -i["number"]))
 
 
 def cmd_kye_issues(a):
@@ -2213,16 +2256,33 @@ def cmd_kye_issues(a):
         print(f"#{i['number']} {age:.1f} h old  {i['title']}  <{i['url']}>")
 
 
+def cmd_outside_claims(a):
+    now = dt.datetime.now(dt.timezone.utc)
+    team = regulars()
+    found = outside_claims(now, a.days, team)
+    print(f"# {len(found)} open issues whose only open PRs are outside contributors' and {a.days:g}+ days old, Kye's first")
+    print(f"# Daily contributors: {', '.join(sorted(team))}")
+    for i in found:
+        print(f"#{i['number']} {(now - parse_ts(i['createdAt'])).days} days old, by {i['author']['login']}  "
+              f"{i['title']}  <{i['url']}>")
+        for p in i["prs"]:
+            print(f"  #{p['number']} by {p['author']['login']}, {(now - parse_ts(p['createdAt'])).days} days old "
+                  f"(+{p['additions']}/-{p['deletions']})")
+
+
 def cmd_competition(a):
     repo = DOCS if a.repo == "docs" else SWARMS
     rows = competition(repo, a.terms, a.removed, set(a.allow or []))
     if not rows:
         print("none")
+        return
+    team = regulars()
     for r in rows:
         same = {True: "removes the same lines", False: "doesn't remove these lines", None: "diff unread"}
         tail = f", {same[r['removes_same']]}" if "removes_same" in r else ""
-        print(f"#{r['number']} {r['state'].lower()} by {r['author']} (+{r['additions']}/-{r['deletions']}, "
-              f"updated {r['updatedAt'][:10]}) {r['title'][:80]}{tail} <{r['url']}>")
+        who = "daily" if r["author"] in team else "outside"
+        print(f"#{r['number']} {r['state'].lower()} by {r['author']} ({who}, +{r['additions']}/-{r['deletions']}, "
+              f"opened {r['createdAt'][:10]}, updated {r['updatedAt'][:10]}) {r['title'][:80]}{tail} <{r['url']}>")
 
 
 def _unlock_and_retry(func, path, _exc):
@@ -2587,6 +2647,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hours", type=float, default=4)
     p.add_argument("--now", help="answer as of this ISO time instead, to replay a past day")
     p.set_defaults(func=cmd_kye_issues)
+
+    p = sub.add_parser("outside-claims", help="open issues whose only open PRs are old ones from outside contributors")
+    p.add_argument("--days", type=float, default=7, help="days an outside PR stays open before it stops counting")
+    p.set_defaults(func=cmd_outside_claims)
 
     p = sub.add_parser("competition", help="PRs that mention these terms, and whether they remove the same lines")
     p.add_argument("terms", nargs="+")

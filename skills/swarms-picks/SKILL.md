@@ -33,6 +33,8 @@ b) **Group meetings.** Load `mcp__claude_ai_Wispr_Flow__search_meetings` and `mc
 
 c) **Issues.** `gh issue list --repo kyegomez/swarms --state open --limit 300 --json number,title,labels,assignees,author,createdAt,comments`. Skip assigned issues and routehub work. Prefer Kye's issues, then the newest framework and API bugs and tech debt. Kye's issues from the last 3 days rank with his direct requests in step 5: on 2026-11-24 he said he would post 10 to 20 framework issues that day. Feature requests and refactors too big for 100 lines are candidates for the Big PRs section. Triage on titles, read about 15 in full, and confirm each still applies by reading master in the snapshot.
 
+When c) turns up no issue from the last 3 days that's still free of PRs, take older issues whose only PRs are outside contributors'. As of 2026-11-26 Kye says that's fine when no new issues are open, and that he rarely merges a PR from someone who isn't a daily contributor, and an old one even less often. The record agrees: of the 112 outside PRs that waited 7 days unmerged between 2026-09-07 and 2026-11-26, 8 merged later. `python3 $T outside-claims` lists open, unassigned issues whose only open PRs are outside contributors' and at least 7 days old, Kye's first. It leaves out an issue that a merged PR names. A daily contributor is anyone with merges on 5 or more days in the last 30, plus Kye and me, and the command prints today's list. Write the fix from master, not from their diff. The brief's History names each outside PR with its author, size and age, and the ledger source is `old issue #N`, so `ledger stats` shows whether these merge.
+
 d) **Bugs found by reading.** Pick one or two framework modules not listed under "Scanned" in the last 7 reports. A candidate needs a file:line and an input that gives a wrong result.
 
 e) **Deletions**, which Kye welcomes. `python3 $T unused <area> --tree <snapshot>/swarms --docs <snapshot>/swarms-framework-docs`, rotating the area each day. Each hit is a lead: read the code, then `python3 $T scan <name> --tree ... --docs ...` for every mention. Public API needs more than "nothing calls it". Check whether it's documented and maintained (`gh api "repos/kyegomez/swarms/commits?path=<file>&per_page=10"`), and lead with what's wrong with it, such as a parameter that does nothing.
@@ -53,7 +55,7 @@ j) **Speed.** On 2026-11-24 Kye called making the main swarm architectures run f
 
 ## 4. Check every candidate
 
-- **Competition:** `python3 $T competition <issue number> <symbol>`, with `--removed '<regex>'` for a deletion. Read why any attempt was closed. A PR existing isn't a reason to drop a candidate, because the smaller PR tends to win: give the competitor's size and whether a smaller PR is realistic. Drop it if a recent small PR already does the job.
+- **Competition:** `python3 $T competition <issue number> <symbol>`, with `--removed '<regex>'` for a deletion. Read why any attempt was closed. A PR existing isn't a reason to drop a candidate, because the smaller PR tends to win: give the competitor's size and whether a smaller PR is realistic. Drop it if a recent small PR already does the job. An outside contributor's PR that has been open 7 days or more doesn't count against a candidate (see c), but a daily contributor's open PR does. `competition` marks each author daily or outside and gives the date the PR opened.
 - **Size:** source plus test lines. Deletions get no new tests. A fix or feature gets one compact test covering several cases, within AGENTS.md's test budget. Find the existing test it can extend. Anything over 100 lines is a big PR. Don't drop it for its size. It competes for the Big PRs section in step 5.
 - **Docs:** "none" unless users can see the change. Otherwise name the page. A docs PR only goes with a framework PR.
 
@@ -68,7 +70,7 @@ j) **Speed.** On 2026-11-24 Kye called making the main swarm architectures run f
 1. The report, to `<tasks>/daily-opportunities/<date>.md`.
 2. One brief per item in the Shortlist and Big PRs sections, to `<tasks>/handoffs/<date>/<N>-<slug>.md`.
 3. One issue draft per item that no open issue covers, to `<tasks>/handoffs/<date>/<N>-<slug>.issue.md`. Search first with `gh issue list --repo kyegomez/swarms --state open --search "<symbol>"`. An item that came from an issue, or that an open issue already covers, uses that issue and gets no draft. A repeat item keeps the issue from its first listing while that issue is open. A security finding gets no draft, because a public issue would disclose it before the fix. The draft's first line is the title, `[BUG|PERF|CHORE|FEAT][Symbol][What's wrong]`, as in #3584 or #3552. The body follows Kye's issues: the problem as a user sees it, the evidence (file:line, the input, what comes back and what should), and the cause. End it with the 🤖 line naming your model, then run `python3 $T lint` on the drafts. Opening an issue doesn't change the item's ledger source.
-4. One ledger row per item: `python3 $T ledger add --item "<title>" --source "<source>" --est <lines> --brief <brief path>`. The source is one of `issue #N`, `meeting YYYY-MM-DD`, `bounty`, `kye request`, `bug found by reading`, `bug found by running`, `deletion`, `lint lead`, `sibling of #N`, `style rule` or `speed`.
+4. One ledger row per item: `python3 $T ledger add --item "<title>" --source "<source>" --est <lines> --brief <brief path>`. The source is one of `issue #N`, `old issue #N` (an issue from `outside-claims`), `meeting YYYY-MM-DD`, `bounty`, `kye request`, `bug found by reading`, `bug found by running`, `deletion`, `lint lead`, `sibling of #N`, `style rule` or `speed`.
 5. Review and open the drafts as step 7 says, before you remove the snapshot.
 6. Remove the snapshot folder.
 7. Give the report as your final message.
@@ -86,7 +88,7 @@ One line each with a link and the action, from the status report, or "None".
 
 ## Shortlist
 ### N. [TYPE][Symbol][Imperative description]
-- Source: bounty / meeting (date) / issue link / found by reading / found by running / deletion / lint lead / sibling of #N / style rule / speed
+- Source: bounty / meeting (date) / issue link / old issue link and its outside PR / found by reading / found by running / deletion / lint lead / sibling of #N / style rule / speed
 - Size: about N lines, in <files>
 - Evidence: file:line and the failing input, for a deletion the scan result and what's wrong with it, or for speed the input size, the measurement and the command that took it
 - Siblings: the other items here that fix the same bug elsewhere, or none

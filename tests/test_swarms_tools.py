@@ -307,6 +307,24 @@ class KyeIssues(unittest.TestCase):
         # 2 has a PR by then, 3's PR comes later, 4 was closed, 5 didn't exist yet, and #12 isn't #1.
         self.assertEqual([i["number"] for i in found], [1, 3])
 
+    def test_outside_claims_lists_issues_only_old_outside_prs_name(self):
+        issues = [{"number": n, "title": "t", "url": "u", "author": {"login": "kyegomez" if n != 2 else "x"},
+                   "createdAt": "2026-11-01T00:00:00Z", "assignees": [{"login": "a"}] if n == 6 else []}
+                  for n in range(1, 8)]
+
+        def pr(issue, who, made):
+            return {"number": 100 + issue, "title": "[FIX][x][y]", "body": f"Closes #{issue}", "author": {"login": who},
+                    "createdAt": made, "additions": 1, "deletions": 1}
+
+        old, new = "2026-11-10T00:00:00Z", "2026-11-24T00:00:00Z"
+        prs = [pr(1, "out", old), pr(2, "out", old), pr(3, "out", new), pr(4, "out", old), pr(4, "ayaan", old),
+               pr(5, "out", old), pr(6, "out", old)]
+        fake = lambda *args, **kwargs: issues if args[0] == "issue" else [pr(5, "me", old)] if "merged" in args else prs
+        with mock.patch.object(swarms, "gh", fake):
+            found = swarms.outside_claims(swarms.parse_ts("2026-11-26T00:00:00Z"), 7, {"ayaan", "me"})
+        # Kye's issue first. 3's PR is 2 days old, 4 has a daily contributor's, 5 has a merged one, 6 is assigned.
+        self.assertEqual([i["number"] for i in found], [1, 2])
+
 
 class Ledger(unittest.TestCase):
     def test_add_refuses_a_dropped_item(self):
